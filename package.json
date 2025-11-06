@@ -1,0 +1,82 @@
+{
+  "name": "@luciformresearch/codeparsers",
+  "version": "0.1.0",
+  "description": "Unified code parsers for TypeScript and Python with tree-sitter WASM bindings",
+  "license": "LRSL-1.1 (See LICENSE file for more information)",
+  "author": "Lucie Defraiteur <luciedefraiteur@luciformresearch.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luciformresearch/LR_CodeRag.git",
+    "directory": "packages/codeparsers"
+  },
+  "bugs": {
+    "url": "https://github.com/luciformresearch/LR_CodeRag/issues"
+  },
+  "homepage": "https://github.com/luciformresearch/LR_CodeRag/tree/main/packages/codeparsers#readme",
+  "type": "module",
+  "main": "./dist/esm/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "keywords": [
+    "parser",
+    "typescript",
+    "python",
+    "tree-sitter",
+    "ast",
+    "code-analysis",
+    "wasm",
+    "esm"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./typescript": {
+      "types": "./dist/types/typescript/index.d.ts",
+      "import": "./dist/esm/typescript/index.js"
+    },
+    "./python": {
+      "types": "./dist/types/python/index.d.ts",
+      "import": "./dist/esm/python/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-extensions.mjs",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build": "npm run clean && npm run build:esm && npm run build:types",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage --reporter=default",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "format": "prettier -w ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-python": "^0.23.6",
+    "tree-sitter-typescript": "^0.23.2",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.25.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "c8": "^9.1.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.0.0"
+  }
+}
