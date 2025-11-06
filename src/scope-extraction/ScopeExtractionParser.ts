@@ -1,8 +1,14 @@
 /**
- * Scope Extraction Parser
+ * Scope Extraction Parser (Low-Level API)
  *
  * Parse TypeScript code and extract rich metadata for XML generation.
  * Optimized for scope extraction with full metadata collection.
+ *
+ * **Note**: This is a low-level API. For most use cases, prefer using:
+ * - `TypeScriptLanguageParser` for TypeScript/JavaScript
+ * - `PythonLanguageParser` for Python (use `PythonScopeExtractionParser` instead)
+ *
+ * The language-specific parsers implement a universal interface and are the recommended API.
  */
 
 import { WasmLoader } from '../wasm/WasmLoader.js';

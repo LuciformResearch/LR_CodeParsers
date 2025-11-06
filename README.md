@@ -44,14 +44,20 @@ npm install @luciformresearch/codeparsers
 
 ## Usage
 
-### Basic Example - TypeScript
+> 📖 **New to this library?** Check out the [API Guide](./API_GUIDE.md) for a detailed explanation of the different parser APIs and when to use each one.
+
+### Recommended API - Language-Specific Parsers
+
+The recommended way to use this library is through language-specific parsers, which implement a universal interface:
+
+#### TypeScript Example
 
 ```typescript
-import { ScopeExtractionParser } from '@luciformresearch/codeparsers';
+import { TypeScriptLanguageParser } from '@luciformresearch/codeparsers';
 import * as fs from 'fs';
 
 // Initialize parser for TypeScript
-const parser = new ScopeExtractionParser('typescript');
+const parser = new TypeScriptLanguageParser();
 await parser.initialize();
 
 // Parse a file
@@ -65,14 +71,14 @@ result.scopes.forEach(scope => {
 });
 ```
 
-### Basic Example - Python
+#### Python Example
 
 ```typescript
-import { ScopeExtractionParser } from '@luciformresearch/codeparsers';
+import { PythonLanguageParser } from '@luciformresearch/codeparsers';
 import * as fs from 'fs';
 
 // Initialize parser for Python
-const parser = new ScopeExtractionParser('python');
+const parser = new PythonLanguageParser();
 await parser.initialize();
 
 // Parse a file
@@ -86,38 +92,65 @@ result.scopes.forEach(scope => {
 });
 ```
 
-### Advanced Usage with Language-Specific Parsers
+### Multi-Language Projects with ParserRegistry
 
-For more control, you can use the ParserRegistry system:
+For projects that need to handle multiple languages:
 
 ```typescript
 import { ParserRegistry, TypeScriptLanguageParser, PythonLanguageParser } from '@luciformresearch/codeparsers';
 
-// Register parsers
+// Create and register parsers
+const registry = new ParserRegistry();
+
 const tsParser = new TypeScriptLanguageParser();
 await tsParser.initialize();
-ParserRegistry.register(tsParser);
+registry.register(tsParser);
 
 const pyParser = new PythonLanguageParser();
 await pyParser.initialize();
-ParserRegistry.register(pyParser);
+registry.register(pyParser);
 
-// Now you can use the registry to get parsers by language
-const parser = ParserRegistry.getParser('typescript');
+// Get parser by language
+const parser = registry.getParser('typescript');
+const result = await parser.parseFile('myfile.ts', content);
+
+// Or get parser by file extension
+const autoParser = registry.getParserForFile('script.py');
 ```
+
+### Advanced Usage - Low-Level Parsers
+
+For advanced use cases, you can use the low-level scope extraction parsers directly:
+
+```typescript
+import { ScopeExtractionParser, PythonScopeExtractionParser } from '@luciformresearch/codeparsers';
+
+// TypeScript low-level parser
+const tsParser = new ScopeExtractionParser('typescript');
+await tsParser.initialize();
+
+// Python low-level parser
+const pyParser = new PythonScopeExtractionParser();
+await pyParser.initialize();
+```
+
+**Note**: The low-level parsers return `ScopeFileAnalysis` instead of the universal `FileAnalysis` format. Use language-specific parsers (`TypeScriptLanguageParser`, `PythonLanguageParser`) for the recommended universal interface.
 
 ## Main Exports
 
-### Parsers
-- **`ScopeExtractionParser`** - Recommended parser for extracting scope information
-- **`TypeScriptLanguageParser`** - Low-level TypeScript parser
-- **`PythonLanguageParser`** - Low-level Python parser
-- **`ParserRegistry`** - Registry system for managing parsers
+### Recommended Parsers (Universal Interface)
+- **`TypeScriptLanguageParser`** - Recommended TypeScript/JavaScript parser
+- **`PythonLanguageParser`** - Recommended Python parser
+- **`ParserRegistry`** - Registry system for multi-language projects
+
+### Advanced Parsers (Low-Level)
+- **`ScopeExtractionParser`** - Low-level scope extraction for TypeScript
+- **`PythonScopeExtractionParser`** - Low-level scope extraction for Python
 - **`SyntaxHighlightingParser`** - Parser optimized for syntax highlighting
 
 ### Legacy Parsers (Deprecated)
-- `StructuredTypeScriptParser` - Use `ScopeExtractionParser` instead
-- `PythonParser` - Use `ScopeExtractionParser` instead
+- `StructuredTypeScriptParser` - Use `TypeScriptLanguageParser` instead
+- `PythonParser` - Use `PythonLanguageParser` instead
 
 ### Types
 - `ScopeInfo` - Complete scope metadata

@@ -1,8 +1,13 @@
 /**
- * Python Scope Extraction Parser
+ * Python Scope Extraction Parser (Low-Level API)
  *
  * Parse Python code and extract rich metadata for XML generation.
  * Optimized for scope extraction with full metadata collection.
+ *
+ * **Note**: This is a low-level API. For most use cases, prefer using:
+ * - `PythonLanguageParser` - Implements the universal interface and is the recommended API
+ *
+ * The language-specific parser provides a consistent interface across languages.
  */
 
 import { WasmLoader } from '../wasm/WasmLoader.js';

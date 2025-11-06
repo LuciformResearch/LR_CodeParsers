@@ -45,7 +45,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "API_GUIDE.md"
   ],
   "scripts": {
     "clean": "rm -rf dist",
