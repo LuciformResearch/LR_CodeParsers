@@ -6,13 +6,12 @@
   "author": "Lucie Defraiteur <luciedefraiteur@luciformresearch.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/luciformresearch/LR_CodeRag.git",
-    "directory": "packages/codeparsers"
+    "url": "git+https://github.com/LuciformResearch/LR_CodeParsers.git"
   },
   "bugs": {
-    "url": "https://github.com/luciformresearch/LR_CodeRag/issues"
+    "url": "https://github.com/LuciformResearch/LR_CodeParsers/issues"
   },
-  "homepage": "https://github.com/luciformresearch/LR_CodeRag/tree/main/packages/codeparsers#readme",
+  "homepage": "https://github.com/LuciformResearch/LR_CodeParsers#readme",
   "type": "module",
   "main": "./dist/esm/index.js",
   "module": "./dist/esm/index.js",

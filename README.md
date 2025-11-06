@@ -44,42 +44,86 @@ npm install @luciformresearch/codeparsers
 
 ## Usage
 
-### TypeScript Parser
+### Basic Example - TypeScript
 
 ```typescript
-import { StructuredTypeScriptParser } from '@luciformresearch/codeparsers';
+import { ScopeExtractionParser } from '@luciformresearch/codeparsers';
+import * as fs from 'fs';
 
-const parser = new StructuredTypeScriptParser();
-await parser.init();
-
-const result = await parser.parseFile('/path/to/file.ts');
-console.log(result.scopes); // Parsed scopes with full context
-```
-
-### Python Parser
-
-```typescript
-import { PythonParser } from '@luciformresearch/codeparsers';
-
-const parser = new PythonParser();
+// Initialize parser for TypeScript
+const parser = new ScopeExtractionParser('typescript');
 await parser.initialize();
 
-const analysis = await parser.parseFile('/path/to/file.py');
-console.log(analysis.scopes); // Parsed Python scopes
+// Parse a file
+const content = fs.readFileSync('myfile.ts', 'utf-8');
+const result = await parser.parseFile('myfile.ts', content);
+
+// Access parsed scopes
+console.log(`Found ${result.scopes.length} scopes`);
+result.scopes.forEach(scope => {
+  console.log(`${scope.type}: ${scope.name}`);
+});
 ```
 
-## Exports
+### Basic Example - Python
 
-### Main exports
-- `StructuredTypeScriptParser` - Full TypeScript parser
-- `PythonParser` - Python parser
-- `PythonReferenceTracker` - Python import/reference tracker
+```typescript
+import { ScopeExtractionParser } from '@luciformresearch/codeparsers';
+import * as fs from 'fs';
+
+// Initialize parser for Python
+const parser = new ScopeExtractionParser('python');
+await parser.initialize();
+
+// Parse a file
+const content = fs.readFileSync('myfile.py', 'utf-8');
+const result = await parser.parseFile('myfile.py', content);
+
+// Access parsed scopes
+console.log(`Found ${result.scopes.length} scopes`);
+result.scopes.forEach(scope => {
+  console.log(`${scope.type}: ${scope.name}`);
+});
+```
+
+### Advanced Usage with Language-Specific Parsers
+
+For more control, you can use the ParserRegistry system:
+
+```typescript
+import { ParserRegistry, TypeScriptLanguageParser, PythonLanguageParser } from '@luciformresearch/codeparsers';
+
+// Register parsers
+const tsParser = new TypeScriptLanguageParser();
+await tsParser.initialize();
+ParserRegistry.register(tsParser);
+
+const pyParser = new PythonLanguageParser();
+await pyParser.initialize();
+ParserRegistry.register(pyParser);
+
+// Now you can use the registry to get parsers by language
+const parser = ParserRegistry.getParser('typescript');
+```
+
+## Main Exports
+
+### Parsers
+- **`ScopeExtractionParser`** - Recommended parser for extracting scope information
+- **`TypeScriptLanguageParser`** - Low-level TypeScript parser
+- **`PythonLanguageParser`** - Low-level Python parser
+- **`ParserRegistry`** - Registry system for managing parsers
+- **`SyntaxHighlightingParser`** - Parser optimized for syntax highlighting
+
+### Legacy Parsers (Deprecated)
+- `StructuredTypeScriptParser` - Use `ScopeExtractionParser` instead
+- `PythonParser` - Use `ScopeExtractionParser` instead
 
 ### Types
-- `TypeScriptScope`
-- `PythonScope`
-- `ParameterInfo`
-- `ImportReference`
+- `ScopeInfo` - Complete scope metadata
+- `ScopeFileAnalysis` - File-level analysis result
+- `ParameterInfo` - Function parameter information
+- `ImportReference` - Import/export references
 - And many more...
 
 ## License
