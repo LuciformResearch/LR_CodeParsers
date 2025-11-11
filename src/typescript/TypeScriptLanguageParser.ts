@@ -114,7 +114,12 @@ export class TypeScriptLanguageParser extends BaseLanguageParser {
           astIssues: scope.astIssues,
           astNotes: scope.astNotes,
           exports: scope.exports,
-          dependencies: scope.dependencies
+          dependencies: scope.dependencies,
+          // Phase 3: New structured metadata
+          genericParameters: scope.genericParameters,
+          heritageClauses: scope.heritageClauses,
+          decoratorDetails: scope.decoratorDetails,
+          enumMembers: scope.enumMembers
         }
       }
     };

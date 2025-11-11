@@ -21,7 +21,11 @@ import type {
   ReturnTypeInfo,
   ScopeFileAnalysis,
   ImportReference,
-  IdentifierReference
+  IdentifierReference,
+  HeritageClause,
+  GenericParameter,
+  DecoratorInfo,
+  EnumMemberInfo
 } from './types.js';
 
 type SyntaxNode = any;
@@ -231,6 +235,11 @@ export class ScopeExtractionParser {
     const signature = this.buildSignature('class', name, parameters, returnType, modifiers);
     const contentDedented = nodeContent; // Already a single line
 
+    // Extract NEW metadata (Phase 3 improvements)
+    const genericParameters = this.extractGenericParameters(node, content);
+    const heritageClauses = this.extractHeritageClauses(node, content);
+    const decoratorDetails = this.extractDecoratorDetails(node, content);
+
     // Build reference exclusions
     const referenceExclusions = this.buildReferenceExclusions(name, parameters);
     const localSymbols = this.collectLocalSymbols(node, content);
@@ -265,6 +274,9 @@ export class ScopeExtractionParser {
       returnType,
       returnTypeInfo,
       modifiers,
+      genericParameters,
+      heritageClauses,
+      decoratorDetails,
       content: nodeContent,
       contentDedented,
       children: [], // Will be populated by recursive extraction
@@ -305,6 +317,11 @@ export class ScopeExtractionParser {
     const signature = this.buildSignature('interface', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
 
+    // Extract NEW metadata (Phase 3 improvements)
+    const genericParameters = this.extractGenericParameters(node, content);
+    const heritageClauses = this.extractHeritageClauses(node, content);
+    const decoratorDetails = this.extractDecoratorDetails(node, content);
+
     // Build reference exclusions
     const referenceExclusions = this.buildReferenceExclusions(name, parameters);
     const localSymbols = this.collectLocalSymbols(node, content);
@@ -332,6 +349,9 @@ export class ScopeExtractionParser {
       parameters,
       returnType: undefined,
       modifiers,
+      genericParameters,
+      heritageClauses,
+      decoratorDetails,
       content: nodeContent,
       contentDedented,
       children: [],
@@ -372,6 +392,10 @@ export class ScopeExtractionParser {
     const signature = this.buildSignature('function', name, parameters, returnType, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
 
+    // Extract NEW metadata (Phase 3 improvements)
+    const genericParameters = this.extractGenericParameters(node, content);
+    const decoratorDetails = this.extractDecoratorDetails(node, content);
+
     // Build reference exclusions
     const referenceExclusions = this.buildReferenceExclusions(name, parameters);
     const localSymbols = this.collectLocalSymbols(node, content);
@@ -403,6 +427,8 @@ export class ScopeExtractionParser {
       returnTypeInfo,
       returnType,
       modifiers,
+      genericParameters,
+      decoratorDetails,
       content: nodeContent,
       contentDedented,
       children: [],
@@ -444,6 +470,10 @@ export class ScopeExtractionParser {
     const signature = this.buildSignature('method', name, parameters, returnType, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
 
+    // Extract NEW metadata (Phase 3 improvements)
+    const genericParameters = this.extractGenericParameters(node, content);
+    const decoratorDetails = this.extractDecoratorDetails(node, content);
+
     // Build reference exclusions
     const referenceExclusions = this.buildReferenceExclusions(name, parameters);
     const localSymbols = this.collectLocalSymbols(node, content);
@@ -475,6 +505,8 @@ export class ScopeExtractionParser {
       returnType,
       returnTypeInfo,
       modifiers,
+      genericParameters,
+      decoratorDetails,
       content: nodeContent,
       contentDedented,
       children: [],
@@ -514,6 +546,9 @@ export class ScopeExtractionParser {
     const signature = this.buildSignature('enum', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
 
+    // Extract NEW metadata (Phase 3 improvements)
+    const enumMembers = this.extractEnumMembers(node, content);
+
     // Build reference exclusions
     const referenceExclusions = this.buildReferenceExclusions(name, parameters);
     const localSymbols = this.collectLocalSymbols(node, content);
@@ -541,6 +576,7 @@ export class ScopeExtractionParser {
       parameters,
       returnType: undefined,
       modifiers,
+      enumMembers,
       content: nodeContent,
       contentDedented,
       children: [],
@@ -1018,6 +1054,200 @@ export class ScopeExtractionParser {
       line: returnTypeNode.startPosition.row + 1,
       column: returnTypeNode.startPosition.column
     };
+  }
+
+  /**
+   * Extract heritage clauses (extends/implements)
+   * Works for both classes and interfaces
+   */
+  private extractHeritageClauses(node: SyntaxNode, content: string): HeritageClause[] {
+    const clauses: HeritageClause[] = [];
+
+
+    // Look for extends clause - class_heritage contains extends_clause as child
+    let extendsClause = node.children.find(child => child.type === 'class_heritage');
+    if (extendsClause) {
+      // For classes: class_heritage > extends_clause
+      extendsClause = extendsClause.children.find(c => c.type === 'extends_clause');
+    } else {
+      // For interfaces: direct extends_type_clause
+      extendsClause = node.children.find(child => child.type === 'extends_type_clause');
+    }
+
+    if (extendsClause) {
+      const types: string[] = [];
+      for (const child of extendsClause.children) {
+        // Skip 'extends' keyword
+        if (child.type === 'extends' || child.text === 'extends') continue;
+
+        // Capture type references
+        if (child.type === 'type_identifier' || child.type === 'identifier' ||
+            child.type === 'member_expression' || child.type === 'generic_type') {
+          const typeText = this.getNodeText(child, content).trim();
+          if (typeText && typeText !== ',') {
+            types.push(typeText);
+          }
+        }
+      }
+
+      if (types.length > 0) {
+        clauses.push({
+          clause: 'extends',
+          types
+        });
+      }
+    }
+
+    // Look for implements clause (interfaces)
+    const implementsClause = node.children.find(
+      child => child.type === 'implements_clause' || child.type === 'class_implements_clause'
+    );
+
+    if (implementsClause) {
+      const types: string[] = [];
+      for (const child of implementsClause.children) {
+        // Skip 'implements' keyword
+        if (child.type === 'implements' || child.text === 'implements') continue;
+
+        // Capture type references
+        if (child.type === 'type_identifier' || child.type === 'identifier' ||
+            child.type === 'member_expression' || child.type === 'generic_type') {
+          const typeText = this.getNodeText(child, content).trim();
+          if (typeText && typeText !== ',') {
+            types.push(typeText);
+          }
+        }
+      }
+
+      if (types.length > 0) {
+        clauses.push({
+          clause: 'implements',
+          types
+        });
+      }
+    }
+
+    return clauses;
+  }
+
+  /**
+   * Extract generic/type parameters
+   * Examples: <T>, <T extends Base>, <K extends keyof T = string>
+   */
+  private extractGenericParameters(node: SyntaxNode, content: string): GenericParameter[] {
+    const params: GenericParameter[] = [];
+
+    // Find type_parameters node
+    const typeParamsNode = node.childForFieldName('type_parameters');
+    if (!typeParamsNode) return params;
+
+    for (const child of typeParamsNode.children) {
+      if (child.type === 'type_parameter') {
+        const nameNode = child.childForFieldName('name');
+        if (!nameNode) continue;
+
+        const name = this.getNodeText(nameNode, content);
+
+        // Extract constraint (extends clause)
+        const constraintNode = child.childForFieldName('constraint');
+        const constraint = constraintNode ? this.getNodeText(constraintNode, content) : undefined;
+
+        // Extract default type
+        const defaultNode = child.childForFieldName('default_type') || child.childForFieldName('default');
+        const defaultType = defaultNode ? this.getNodeText(defaultNode, content) : undefined;
+
+        params.push({
+          name,
+          constraint,
+          defaultType
+        });
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract decorator details with arguments
+   * Works for both TypeScript and Python decorators
+   */
+  private extractDecoratorDetails(node: SyntaxNode, content: string): DecoratorInfo[] {
+    const decorators: DecoratorInfo[] = [];
+
+    for (const child of node.children) {
+      if (child.type === 'decorator') {
+        const nameNode = child.children.find(
+          n => n.type === 'identifier' || n.type === 'call_expression'
+        );
+
+        if (!nameNode) continue;
+
+        let name: string;
+        let args: string | undefined;
+
+        if (nameNode.type === 'call_expression') {
+          // Decorator with arguments: @Entity({ tableName: 'users' })
+          const funcNode = nameNode.childForFieldName('function');
+          name = funcNode ? this.getNodeText(funcNode, content) : '';
+
+          const argsNode = nameNode.childForFieldName('arguments');
+          args = argsNode ? this.getNodeText(argsNode, content) : undefined;
+        } else {
+          // Simple decorator: @Injectable
+          name = this.getNodeText(nameNode, content);
+        }
+
+        decorators.push({
+          name: name.replace(/^@/, ''), // Remove @ prefix
+          arguments: args,
+          line: child.startPosition.row + 1
+        });
+      }
+    }
+
+    return decorators;
+  }
+
+  /**
+   * Extract enum members with values
+   */
+  private extractEnumMembers(enumNode: SyntaxNode, content: string): EnumMemberInfo[] {
+    const members: EnumMemberInfo[] = [];
+
+    const bodyNode = enumNode.childForFieldName('body');
+    if (!bodyNode) return members;
+
+    for (const child of bodyNode.children) {
+      if (child.type === 'property_identifier' || child.type === 'enum_assignment') {
+        const nameNode = child.type === 'enum_assignment'
+          ? child.childForFieldName('name')
+          : child;
+
+        if (!nameNode) continue;
+
+        const name = this.getNodeText(nameNode, content);
+
+        // Extract value if present
+        let value: string | number | undefined;
+        if (child.type === 'enum_assignment') {
+          const valueNode = child.childForFieldName('value');
+          if (valueNode) {
+            const valueText = this.getNodeText(valueNode, content);
+            // Try to parse as number
+            const numValue = Number(valueText);
+            value = isNaN(numValue) ? valueText.replace(/['"]/g, '') : numValue;
+          }
+        }
+
+        members.push({
+          name,
+          value,
+          line: child.startPosition.row + 1
+        });
+      }
+    }
+
+    return members;
   }
 
   /**

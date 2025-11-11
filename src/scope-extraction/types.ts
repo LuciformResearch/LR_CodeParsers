@@ -56,6 +56,44 @@ export interface ReturnTypeInfo {
   column: number;
 }
 
+/**
+ * Generic/type parameter information
+ * Examples: <T>, <T extends Base>, <K extends keyof T>
+ */
+export interface GenericParameter {
+  name: string;
+  constraint?: string; // The "extends X" part
+  defaultType?: string; // Default type if any
+}
+
+/**
+ * Heritage clause (extends/implements)
+ * Separate from signature for clean querying
+ */
+export interface HeritageClause {
+  clause: 'extends' | 'implements';
+  types: string[]; // Can extend/implement multiple (interfaces)
+}
+
+/**
+ * Decorator information with full details
+ * For both TypeScript and Python decorators
+ */
+export interface DecoratorInfo {
+  name: string;
+  arguments?: string; // Raw argument string
+  line: number;
+}
+
+/**
+ * Enum member with value
+ */
+export interface EnumMemberInfo {
+  name: string;
+  value?: string | number; // Can be string, number, or computed
+  line: number;
+}
+
 export interface ScopeInfo {
   // Basic metadata
   name: string;
@@ -71,6 +109,15 @@ export interface ScopeInfo {
   returnTypeInfo?: ReturnTypeInfo; // Detailed return type info
   modifiers: string[];
 
+  // Generic/Type parameters (for classes, interfaces, functions)
+  genericParameters?: GenericParameter[];
+
+  // Heritage (for classes and interfaces)
+  heritageClauses?: HeritageClause[];
+
+  // Decorators (TypeScript experimental decorators or Python decorators)
+  decoratorDetails?: DecoratorInfo[];
+
   // Content and structure
   content: string;
   contentDedented: string;
@@ -78,6 +125,9 @@ export interface ScopeInfo {
 
   // Class-specific information
   members?: ClassMemberInfo[];
+
+  // Enum-specific information
+  enumMembers?: EnumMemberInfo[];
 
   // Variables declared in this scope
   variables?: VariableInfo[];
