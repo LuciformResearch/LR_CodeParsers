@@ -1,6 +1,6 @@
 {
   "name": "@luciformresearch/codeparsers",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Unified code parsers for TypeScript and Python with tree-sitter WASM bindings",
   "license": "LRSL-1.1 (See LICENSE file for more information)",
   "author": "Lucie Defraiteur <luciedefraiteur@luciformresearch.com>",
