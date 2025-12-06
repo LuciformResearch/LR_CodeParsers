@@ -25,9 +25,15 @@ export class WasmLoader {
       return this.parserInstances.get(cacheKey)!;
     }
 
-    const parser = await this.loadNodeParser(language, config);
-    this.parserInstances.set(cacheKey, parser);
-    return parser;
+    try {
+      const parser = await this.loadNodeParser(language, config);
+      this.parserInstances.set(cacheKey, parser);
+      return parser;
+    } catch (error) {
+      // Don't cache failed parsers
+      console.error(`Failed to load parser for ${language}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -58,8 +64,6 @@ export class WasmLoader {
       wasmPath = require.resolve('tree-sitter-css/tree-sitter-css.wasm');
     } else if (language === 'scss') {
       wasmPath = require.resolve('tree-sitter-scss/tree-sitter-scss.wasm');
-    } else if (language === 'vue') {
-      wasmPath = require.resolve('tree-sitter-vue/tree-sitter-vue.wasm');
     } else if (language === 'svelte') {
       wasmPath = require.resolve('tree-sitter-svelte/tree-sitter-svelte.wasm');
     } else {

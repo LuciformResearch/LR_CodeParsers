@@ -1,13 +1,13 @@
 /**
  * VueParser
  *
- * Parses Vue Single File Components using tree-sitter-vue.
+ * Parses Vue Single File Components using regex-based extraction.
+ * tree-sitter-vue is not WASM-compatible (has external scanner).
  * Extracts template, script, and style sections with their metadata.
  *
  * @since 2025-12-06
  */
 
-import { WasmLoader } from '../wasm/WasmLoader.js';
 import { createHash } from 'crypto';
 import path from 'path';
 import type {
@@ -24,32 +24,20 @@ import type {
   VueDirective,
 } from './types.js';
 
-type SyntaxNode = any;
-
 /**
  * VueParser - Main parser for Vue SFC files
+ * Uses regex-based parsing (tree-sitter-vue not WASM compatible)
  */
 export class VueParser {
-  private parser: any = null;
   private initialized = false;
 
   /**
-   * Initialize the parser
+   * Initialize the parser (no-op for regex-based parser)
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
-
-    try {
-      const { parser } = await WasmLoader.loadParser('vue', {
-        environment: 'node',
-      });
-      this.parser = parser;
-      this.initialized = true;
-      console.log('✅ VueParser initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize VueParser:', error);
-      throw error;
-    }
+    this.initialized = true;
+    console.log('✅ VueParser initialized (regex-based)');
   }
 
   /**
@@ -64,7 +52,6 @@ export class VueParser {
       await this.initialize();
     }
 
-    const tree = this.parser!.parse(content);
     const lines = content.split('\n');
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
 
@@ -86,50 +73,49 @@ export class VueParser {
     let scriptLang: string | undefined;
     let styleLang: string | undefined;
 
-    // Traverse the AST
-    this.traverseNode(tree.rootNode, content, (node) => {
-      const block = this.parseBlock(node, content);
-      if (block) {
-        blocks.push(block);
+    // Extract blocks using regex
+    const extractedBlocks = this.extractBlocks(content);
 
-        switch (block.type) {
-          case 'template':
-            hasTemplate = true;
-            templateLang = block.lang;
-            if (options.parseDirectives !== false) {
-              directives.push(...this.extractDirectives(block.content, block.startLine));
-            }
-            if (options.parseComponents !== false) {
-              componentUsages.push(...this.extractComponentUsages(block.content, block.startLine));
-            }
-            break;
+    for (const block of extractedBlocks) {
+      blocks.push(block);
 
-          case 'script':
-            hasScript = true;
-            if (block.attrs['setup']) {
-              hasScriptSetup = true;
-            }
-            scriptLang = block.lang || (block.attrs['lang'] === 'ts' ? 'typescript' : undefined);
+      switch (block.type) {
+        case 'template':
+          hasTemplate = true;
+          templateLang = block.lang;
+          if (options.parseDirectives !== false) {
+            directives.push(...this.extractDirectives(block.content, block.startLine));
+          }
+          if (options.parseComponents !== false) {
+            componentUsages.push(...this.extractComponentUsages(block.content, block.startLine));
+          }
+          break;
 
-            // Extract from script content
-            this.extractFromScript(block.content, block.startLine, {
-              props,
-              emits,
-              composables,
-              imports,
-            });
-            break;
+        case 'script':
+          hasScript = true;
+          if (block.attrs['setup']) {
+            hasScriptSetup = true;
+          }
+          scriptLang = block.lang || (block.attrs['lang'] === 'ts' ? 'typescript' : undefined);
 
-          case 'style':
-            hasStyle = true;
-            if (block.attrs['scoped']) {
-              styleScoped = true;
-            }
-            styleLang = block.lang;
-            break;
-        }
+          // Extract from script content
+          this.extractFromScript(block.content, block.startLine, {
+            props,
+            emits,
+            composables,
+            imports,
+          });
+          break;
+
+        case 'style':
+          hasStyle = true;
+          if (block.attrs['scoped']) {
+            styleScoped = true;
+          }
+          styleLang = block.lang;
+          break;
       }
-    });
+    }
 
     // Derive component name from filename
     const componentName = this.deriveComponentName(filePath);
@@ -199,124 +185,80 @@ export class VueParser {
   }
 
   /**
-   * Traverse the Vue AST
+   * Extract SFC blocks using regex
    */
-  private traverseNode(
-    node: SyntaxNode,
-    content: string,
-    onBlock: (node: SyntaxNode) => void
-  ): void {
-    // Vue SFC root nodes
-    if (
-      node.type === 'template_element' ||
-      node.type === 'script_element' ||
-      node.type === 'style_element' ||
-      node.type === 'element' // Custom blocks
-    ) {
-      onBlock(node);
+  private extractBlocks(content: string): VueSFCBlock[] {
+    const blocks: VueSFCBlock[] = [];
+
+    // Extract template block
+    const templateMatch = content.match(/<template([^>]*)>([\s\S]*?)<\/template>/i);
+    if (templateMatch) {
+      const attrs = this.parseAttributes(templateMatch[1]);
+      const startLine = content.slice(0, templateMatch.index!).split('\n').length;
+      const endLine = startLine + templateMatch[0].split('\n').length - 1;
+      blocks.push({
+        type: 'template',
+        content: templateMatch[2].trim(),
+        attrs,
+        startLine,
+        endLine,
+        lang: attrs['lang'] as string | undefined,
+      });
     }
 
-    // Recurse
-    for (const child of node.children || []) {
-      this.traverseNode(child, content, onBlock);
+    // Extract script blocks (may have multiple: setup and regular)
+    const scriptRegex = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+    let scriptMatch;
+    while ((scriptMatch = scriptRegex.exec(content)) !== null) {
+      const attrs = this.parseAttributes(scriptMatch[1]);
+      const startLine = content.slice(0, scriptMatch.index).split('\n').length;
+      const endLine = startLine + scriptMatch[0].split('\n').length - 1;
+      blocks.push({
+        type: 'script',
+        content: scriptMatch[2].trim(),
+        attrs,
+        startLine,
+        endLine,
+        lang: attrs['lang'] as string | undefined,
+      });
     }
+
+    // Extract style blocks (may have multiple)
+    const styleRegex = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
+    let styleMatch;
+    while ((styleMatch = styleRegex.exec(content)) !== null) {
+      const attrs = this.parseAttributes(styleMatch[1]);
+      const startLine = content.slice(0, styleMatch.index).split('\n').length;
+      const endLine = startLine + styleMatch[0].split('\n').length - 1;
+      blocks.push({
+        type: 'style',
+        content: styleMatch[2].trim(),
+        attrs,
+        startLine,
+        endLine,
+        lang: attrs['lang'] as string | undefined,
+      });
+    }
+
+    return blocks;
   }
 
   /**
-   * Parse a block (template, script, style)
+   * Parse HTML-style attributes from a string
    */
-  private parseBlock(node: SyntaxNode, content: string): VueSFCBlock | null {
-    let type: VueSFCBlock['type'] = 'custom';
-    let blockContent = '';
+  private parseAttributes(attrString: string): Record<string, string | boolean> {
     const attrs: Record<string, string | boolean> = {};
-    let lang: string | undefined;
 
-    // Determine block type
-    if (node.type === 'template_element') {
-      type = 'template';
-    } else if (node.type === 'script_element') {
-      type = 'script';
-    } else if (node.type === 'style_element') {
-      type = 'style';
-    } else if (node.type === 'element') {
-      const tagName = this.getTagName(node, content);
-      if (tagName === 'template') type = 'template';
-      else if (tagName === 'script') type = 'script';
-      else if (tagName === 'style') type = 'style';
+    // Match key="value", key='value', or standalone key
+    const attrRegex = /(\w+)(?:=["']([^"']*)["'])?/g;
+    let match;
+    while ((match = attrRegex.exec(attrString)) !== null) {
+      const name = match[1];
+      const value = match[2];
+      attrs[name] = value !== undefined ? value : true;
     }
 
-    // Extract attributes and content
-    for (const child of node.children || []) {
-      if (child.type === 'start_tag' || child.type === 'self_closing_tag') {
-        // Parse attributes
-        for (const attrChild of child.children || []) {
-          if (attrChild.type === 'attribute') {
-            const { name, value } = this.parseAttribute(attrChild, content);
-            if (name) {
-              attrs[name] = value ?? true;
-              if (name === 'lang') {
-                lang = value as string;
-              }
-            }
-          }
-        }
-      } else if (child.type === 'raw_text' || child.type === 'text') {
-        blockContent = this.getNodeText(child, content);
-      }
-    }
-
-    // For some grammars, content might be in a different location
-    if (!blockContent) {
-      // Try to get content between tags
-      const fullText = this.getNodeText(node, content);
-      const match = fullText.match(/<[^>]+>([\s\S]*)<\/[^>]+>/);
-      if (match) {
-        blockContent = match[1];
-      }
-    }
-
-    return {
-      type,
-      content: blockContent.trim(),
-      attrs,
-      startLine: node.startPosition.row + 1,
-      endLine: node.endPosition.row + 1,
-      lang,
-    };
-  }
-
-  /**
-   * Get tag name from element
-   */
-  private getTagName(node: SyntaxNode, content: string): string {
-    for (const child of node.children || []) {
-      if (child.type === 'start_tag' || child.type === 'self_closing_tag') {
-        for (const tagChild of child.children || []) {
-          if (tagChild.type === 'tag_name') {
-            return this.getNodeText(tagChild, content);
-          }
-        }
-      }
-    }
-    return '';
-  }
-
-  /**
-   * Parse an attribute node
-   */
-  private parseAttribute(node: SyntaxNode, content: string): { name: string; value?: string } {
-    let name = '';
-    let value: string | undefined;
-
-    for (const child of node.children || []) {
-      if (child.type === 'attribute_name') {
-        name = this.getNodeText(child, content);
-      } else if (child.type === 'quoted_attribute_value' || child.type === 'attribute_value') {
-        value = this.getNodeText(child, content).replace(/^["']|["']$/g, '');
-      }
-    }
-
-    return { name, value };
+    return attrs;
   }
 
   /**
@@ -380,9 +322,6 @@ export class VueParser {
       'select', 'option', 'textarea', 'pre', 'code', 'template', 'slot',
     ]);
 
-    const lines = templateContent.split('\n');
-    let lineIndex = 0;
-
     let match;
     while ((match = componentRegex.exec(templateContent)) !== null) {
       const tagName = match[1];
@@ -393,7 +332,7 @@ export class VueParser {
 
       // Calculate line number
       const upToMatch = templateContent.slice(0, match.index);
-      lineIndex = upToMatch.split('\n').length - 1;
+      const lineIndex = upToMatch.split('\n').length - 1;
 
       // Extract props and events
       const props: string[] = [];
@@ -435,8 +374,6 @@ export class VueParser {
       imports: string[];
     }
   ): void {
-    const lines = scriptContent.split('\n');
-
     // Extract imports
     const importRegex = /import\s+.*?\s+from\s+['"]([^'"]+)['"]/g;
     let match;
@@ -550,14 +487,6 @@ export class VueParser {
       .split('-')
       .map(part => part.charAt(0).toUpperCase() + part.slice(1))
       .join('');
-  }
-
-  /**
-   * Get text content of a tree-sitter node
-   */
-  private getNodeText(node: SyntaxNode, content: string): string {
-    if (!node) return '';
-    return content.slice(node.startIndex, node.endIndex);
   }
 
   /**

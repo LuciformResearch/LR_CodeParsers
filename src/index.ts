@@ -1,72 +1,74 @@
 /**
  * @luciformresearch/codeparsers
  *
- * Unified code parsers for TypeScript and Python with tree-sitter WASM bindings
+ * Unified code parsers for TypeScript, Python, and more with tree-sitter WASM bindings
+ *
+ * ## Recommended API (use these):
+ * - TypeScriptLanguageParser, PythonLanguageParser - Main language parsers
+ * - HTMLDocumentParser, CSSParser, SCSSParser - Web parsers
+ * - VueParser, SvelteParser - Framework parsers
+ * - GenericCodeParser - Fallback for unknown languages
+ * - MarkdownParser - Documentation parser
+ * - ParserRegistry - Auto-detect and use appropriate parser
+ *
+ * ## Universal Types:
+ * - UniversalScope, FileAnalysis, UniversalImport, etc. from './base'
  */
 
-// Base infrastructure
+// =============================================================================
+// PUBLIC API - Recommended for external use
+// =============================================================================
+
+// Base infrastructure (universal types, registry)
 export * from './base/index.js';
 
-// WASM loader (unified Node.js + Browser)
-export * from './wasm/index.js';
-
-// Syntax highlighting parser
-export * from './syntax-highlighting/index.js';
-
-// Scope extraction parser
-export * from './scope-extraction/index.js';
-
-// Language-specific parsers
+// Language-specific parsers (recommended)
 export * from './typescript/index.js';
 export * from './python/index.js';
 
-// HTML Document parser (hybrid approach)
+// Web parsers
 export * from './html/index.js';
-
-// CSS parser
 export * from './css/index.js';
-
-// SCSS parser
 export * from './scss/index.js';
 
-// Vue SFC parser
+// Framework parsers
 export * from './vue/index.js';
-
-// Svelte parser
 export * from './svelte/index.js';
 
-// Legacy TypeScript parsers (deprecated, use ScopeExtractionParser instead)
+// Utility parsers
+export * from './generic/index.js';
+export * from './markdown/index.js';
+
+// Syntax highlighting (utility)
+export * from './syntax-highlighting/index.js';
+
+// =============================================================================
+// INTERNAL API - Used internally, exported for backward compatibility
+// =============================================================================
+
 /**
- * @deprecated Use ScopeExtractionParser from './scope-extraction' instead
+ * @internal Low-level scope extraction (prefer TypeScriptLanguageParser/PythonLanguageParser)
+ * Exported for backward compatibility with existing code
  */
-export { StructuredTypeScriptParser } from './legacy/TypeScriptParser.js';
+export {
+  ScopeExtractionParser,
+  PythonScopeExtractionParser,
+} from './scope-extraction/index.js';
+
 export type {
-  TypeScriptScope,
+  ScopeInfo,
+  ScopeFileAnalysis,
   ParameterInfo,
+  VariableInfo,
+  ClassMemberInfo,
+  ReturnTypeInfo,
   ImportReference,
-  IdentifierReference
-} from './legacy/TypeScriptParser.js';
+  IdentifierReference,
+} from './scope-extraction/index.js';
 
 /**
- * @deprecated Use ScopeExtractionParser from './scope-extraction' instead
+ * @internal WASM loader utilities
  */
-export { StructuredTypeScriptParser as StructuredParser } from './legacy/StructuredTypeScriptParser.js';
-
-// Legacy Python parser (deprecated, use PythonScopeExtractionParser instead)
-/**
- * @deprecated Use PythonScopeExtractionParser from './scope-extraction' instead
- */
-export { PythonParser } from './legacy/PythonParser.js';
-export type {
-  PythonScope,
-  PythonParameter,
-  PythonImport,
-  PythonFileAnalysis
-} from './legacy/PythonParser.js';
-
-/**
- * @deprecated Use PythonScopeExtractionParser from './scope-extraction' instead
- */
-export { PythonReferenceTracker } from './legacy/PythonReferenceTracker.js';
-export type { PythonResolvedReference } from './legacy/PythonReferenceTracker.js';
+export { WasmLoader } from './wasm/index.js';
+export type { SupportedLanguage } from './wasm/index.js';
 
