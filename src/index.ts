@@ -20,6 +20,21 @@ export * from './scope-extraction/index.js';
 export * from './typescript/index.js';
 export * from './python/index.js';
 
+// HTML Document parser (hybrid approach)
+export * from './html/index.js';
+
+// CSS parser
+export * from './css/index.js';
+
+// SCSS parser
+export * from './scss/index.js';
+
+// Vue SFC parser
+export * from './vue/index.js';
+
+// Svelte parser
+export * from './svelte/index.js';
+
 // Legacy TypeScript parsers (deprecated, use ScopeExtractionParser instead)
 /**
  * @deprecated Use ScopeExtractionParser from './scope-extraction' instead

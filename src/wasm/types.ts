@@ -13,4 +13,4 @@ export interface LoadedParser {
   language: any; // Language instance
 }
 
-export type SupportedLanguage = 'typescript' | 'python';
+export type SupportedLanguage = 'typescript' | 'python' | 'html' | 'css' | 'scss' | 'vue' | 'svelte';

@@ -24,7 +24,7 @@ import {
 
 export class TypeScriptLanguageParser extends BaseLanguageParser {
   readonly language: Language = 'typescript';
-  readonly extensions = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'];
+  readonly extensions = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs'];
   readonly capabilities: ParserCapabilities = {
     scopeExtraction: true,
     importResolution: true,
