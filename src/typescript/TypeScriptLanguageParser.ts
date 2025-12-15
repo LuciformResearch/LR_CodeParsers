@@ -96,6 +96,9 @@ export class TypeScriptLanguageParser extends BaseLanguageParser {
       returnType: scope.returnType,
       parameters: scope.parameters,
 
+      // Documentation
+      docstring: scope.docstring,
+
       // Hierarchy
       parentName: scope.parent,
       depth: scope.depth,

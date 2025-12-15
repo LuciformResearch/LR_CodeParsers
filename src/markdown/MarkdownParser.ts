@@ -28,6 +28,7 @@ import type {
 import { TypeScriptLanguageParser } from '../typescript/index.js';
 import { PythonLanguageParser } from '../python/index.js';
 import { GenericCodeParser } from '../generic/index.js';
+import type { ParserRegistry } from '../base/ParserRegistry.js';
 
 /**
  * Language aliases mapping to parser types
@@ -57,6 +58,14 @@ export class MarkdownParser {
   private tsParser?: TypeScriptLanguageParser;
   private pyParser?: PythonLanguageParser;
   private genericParser?: GenericCodeParser;
+  private registry?: ParserRegistry;
+
+  /**
+   * Constructor with optional ParserRegistry to reuse initialized parsers
+   */
+  constructor(registry?: ParserRegistry) {
+    this.registry = registry;
+  }
 
   /**
    * Initialize the parser (lazy initialization of sub-parsers)
@@ -69,14 +78,30 @@ export class MarkdownParser {
 
   /**
    * Ensure TypeScript parser is ready
+   * Reuses parser from registry if available to avoid version conflicts
    */
   private async ensureTsParser(): Promise<TypeScriptLanguageParser | null> {
     if (!this.tsParser) {
       try {
+        // Try to reuse parser from registry if available
+        if (this.registry) {
+          const registryParser = this.registry.getParser('typescript');
+          if (registryParser) {
+            // Ensure it's initialized
+            if (!this.registry.isInitialized('typescript')) {
+              await this.registry.initializeParser('typescript');
+            }
+            // Cast to TypeScriptLanguageParser (registry should return the correct type)
+            this.tsParser = registryParser as TypeScriptLanguageParser;
+            return this.tsParser;
+          }
+        }
+
+        // Fallback: create new parser
         this.tsParser = new TypeScriptLanguageParser();
         await this.tsParser.initialize();
       } catch (e) {
-        console.warn('⚠️ Failed to initialize TypeScript parser for code blocks');
+        console.warn('⚠️ Failed to initialize TypeScript parser for code blocks:', e);
         return null;
       }
     }
@@ -85,14 +110,30 @@ export class MarkdownParser {
 
   /**
    * Ensure Python parser is ready
+   * Reuses parser from registry if available to avoid version conflicts
    */
   private async ensurePyParser(): Promise<PythonLanguageParser | null> {
     if (!this.pyParser) {
       try {
+        // Try to reuse parser from registry if available
+        if (this.registry) {
+          const registryParser = this.registry.getParser('python');
+          if (registryParser) {
+            // Ensure it's initialized
+            if (!this.registry.isInitialized('python')) {
+              await this.registry.initializeParser('python');
+            }
+            // Cast to PythonLanguageParser (registry should return the correct type)
+            this.pyParser = registryParser as PythonLanguageParser;
+            return this.pyParser;
+          }
+        }
+
+        // Fallback: create new parser
         this.pyParser = new PythonLanguageParser();
         await this.pyParser.initialize();
       } catch (e) {
-        console.warn('⚠️ Failed to initialize Python parser for code blocks');
+        console.warn('⚠️ Failed to initialize Python parser for code blocks:', e);
         return null;
       }
     }
@@ -159,7 +200,7 @@ export class MarkdownParser {
 
     // Parse code blocks if enabled
     if (opts.parseCodeBlocks && codeBlocks.length > 0) {
-      codeBlocks = await this.parseCodeBlockContents(codeBlocks);
+      codeBlocks = await this.parseCodeBlockContents(codeBlocks, filePath);
     }
 
     // Get title and description
@@ -875,11 +916,20 @@ export class MarkdownParser {
   /**
    * Parse code block contents with appropriate parsers
    */
-  private async parseCodeBlockContents(blocks: MarkdownCodeBlock[]): Promise<MarkdownCodeBlock[]> {
+  private async parseCodeBlockContents(
+    blocks: MarkdownCodeBlock[],
+    markdownFilePath: string
+  ): Promise<MarkdownCodeBlock[]> {
     const result: MarkdownCodeBlock[] = [];
 
-    for (const block of blocks) {
-      const parsedScopes = await this.parseCodeContent(block.language, block.code);
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const parsedScopes = await this.parseCodeContent(
+        block.language,
+        block.code,
+        markdownFilePath,
+        i
+      );
       result.push({
         ...block,
         parsedScopes: parsedScopes.length > 0 ? parsedScopes : undefined,
@@ -890,22 +940,61 @@ export class MarkdownParser {
   }
 
   /**
+   * Generate a unique filename for an inline code block
+   */
+  private generateInlineFileName(
+    markdownFilePath: string,
+    language: string | undefined,
+    blockIndex: number
+  ): string {
+    // Extract base name from markdown file (without extension)
+    const pathParts = markdownFilePath.split(/[/\\]/);
+    const fileName = pathParts[pathParts.length - 1] || 'unknown';
+    const baseName = fileName.replace(/\.(md|markdown)$/i, '');
+    
+    // Normalize base name (remove special chars, limit length)
+    const normalizedBase = baseName
+      .replace(/[^a-zA-Z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 50); // Limit length
+    
+    // Determine extension based on language
+    const lang = language?.toLowerCase() || '';
+    const parserType = LANGUAGE_MAP[lang] || 'generic';
+    let extension = 'txt';
+    if (parserType === 'typescript') {
+      extension = 'ts';
+    } else if (parserType === 'python') {
+      extension = 'py';
+    }
+    
+    // Generate unique name: nomDuMarkdown-inline-ts-01.ts
+    const indexStr = String(blockIndex + 1).padStart(2, '0');
+    return `${normalizedBase}-inline-${extension}-${indexStr}.${extension}`;
+  }
+
+  /**
    * Parse code content with the appropriate parser
    */
   private async parseCodeContent(
     language: string | undefined,
-    code: string
+    code: string,
+    markdownFilePath: string,
+    blockIndex: number
   ): Promise<ParsedCodeScope[]> {
     if (!code.trim()) return [];
 
     const lang = language?.toLowerCase() || '';
     const parserType = LANGUAGE_MAP[lang] || 'generic';
+    
+    // Generate unique filename for this code block
+    const inlineFileName = this.generateInlineFileName(markdownFilePath, language, blockIndex);
 
     try {
       if (parserType === 'typescript') {
         const parser = await this.ensureTsParser();
         if (parser) {
-          const result = await parser.parseFile('inline.ts', code);
+          const result = await parser.parseFile(inlineFileName, code);
           return result.scopes.map(s => ({
             name: s.name,
             type: s.type,
@@ -919,7 +1008,7 @@ export class MarkdownParser {
       if (parserType === 'python') {
         const parser = await this.ensurePyParser();
         if (parser) {
-          const result = await parser.parseFile('inline.py', code);
+          const result = await parser.parseFile(inlineFileName, code);
           return result.scopes.map(s => ({
             name: s.name,
             type: s.type,
@@ -933,7 +1022,7 @@ export class MarkdownParser {
       // Generic parser for unknown languages
       const genericParser = await this.ensureGenericParser();
       if (genericParser) {
-        const result = await genericParser.parseFile('inline.txt', code);
+        const result = await genericParser.parseFile(inlineFileName, code);
         return result.scopes
           .filter(s => s.type !== 'chunk') // Only real scopes, not chunks
           .map(s => ({
@@ -944,8 +1033,14 @@ export class MarkdownParser {
             source: s.source,
           }));
       }
-    } catch {
-      // Parsing failed, return empty
+    } catch (error: any) {
+      // Log parsing errors instead of silently ignoring them
+      const errorMsg = error?.message || String(error);
+      console.warn(
+        `⚠️ Failed to parse code block #${blockIndex + 1} (${lang || 'unknown'}) from ${markdownFilePath}:`,
+        errorMsg
+      );
+      // Return empty array on error (don't break the whole parsing)
     }
 
     return [];

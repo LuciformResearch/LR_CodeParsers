@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WasmLoader Browser Test</title>
+  <script type="module">
+    // Test results container
+    const results = [];
+
+    function log(message, success = true) {
+      results.push({ message, success });
+      console.log(success ? '✓' : '✗', message);
+    }
+
+    async function runTests() {
+      const statusEl = document.getElementById('status');
+      const resultsEl = document.getElementById('results');
+
+      statusEl.textContent = 'Running tests...';
+
+      try {
+        // Import web-tree-sitter as ESM module
+        const TreeSitter = await import('/node_modules/web-tree-sitter/tree-sitter.js');
+        const Parser = TreeSitter.Parser;
+
+        // Initialize with locateFile to find WASM
+        await Parser.init({
+          locateFile: (file) => `/node_modules/web-tree-sitter/${file}`
+        });
+
+        log('TreeSitter initialized');
+
+        // Test TypeScript parser
+        const Language = TreeSitter.Language;
+        const parser = new Parser();
+        const tsLang = await Language.load('/dist/esm/wasm/grammars/tree-sitter-typescript.wasm');
+        parser.setLanguage(tsLang);
+
+        const tsCode = 'function hello(name: string): string { return "Hello " + name; }';
+        const tsTree = parser.parse(tsCode);
+
+        if (tsTree && tsTree.rootNode && tsTree.rootNode.type === 'program') {
+          log('TypeScript parser works');
+        } else {
+          log('TypeScript parser failed', false);
+        }
+
+        // Test Python parser
+        const pyLang = await Language.load('/dist/esm/wasm/grammars/tree-sitter-python.wasm');
+        parser.setLanguage(pyLang);
+
+        const pyCode = 'def hello(name):\n    return "Hello " + name';
+        const pyTree = parser.parse(pyCode);
+
+        if (pyTree && pyTree.rootNode && pyTree.rootNode.type === 'module') {
+          log('Python parser works');
+        } else {
+          log('Python parser failed', false);
+        }
+
+        // Test HTML parser
+        const htmlLang = await Language.load('/dist/esm/wasm/grammars/tree-sitter-html.wasm');
+        parser.setLanguage(htmlLang);
+
+        const htmlCode = '<div class="test"><p>Hello</p></div>';
+        const htmlTree = parser.parse(htmlCode);
+
+        if (htmlTree && htmlTree.rootNode && htmlTree.rootNode.type === 'document') {
+          log('HTML parser works');
+        } else {
+          log('HTML parser failed', false);
+        }
+
+        // Test CSS parser
+        const cssLang = await Language.load('/dist/esm/wasm/grammars/tree-sitter-css.wasm');
+        parser.setLanguage(cssLang);
+
+        const cssCode = '.container { color: red; }';
+        const cssTree = parser.parse(cssCode);
+
+        if (cssTree && cssTree.rootNode && cssTree.rootNode.type === 'stylesheet') {
+          log('CSS parser works');
+        } else {
+          log('CSS parser failed', false);
+        }
+
+        // Display results
+        const allPassed = results.every(r => r.success);
+        statusEl.textContent = allPassed ? 'All tests passed!' : 'Some tests failed';
+        statusEl.className = allPassed ? 'success' : 'failure';
+
+        resultsEl.innerHTML = results.map(r =>
+          `<div class="${r.success ? 'pass' : 'fail'}">${r.success ? '✓' : '✗'} ${r.message}</div>`
+        ).join('');
+
+        // Set data attribute for Playwright to read
+        document.body.dataset.testComplete = 'true';
+        document.body.dataset.testsPassed = allPassed ? 'true' : 'false';
+        document.body.dataset.testResults = JSON.stringify(results);
+
+      } catch (error) {
+        statusEl.textContent = 'Error: ' + error.message;
+        statusEl.className = 'failure';
+        console.error(error);
+        document.body.dataset.testComplete = 'true';
+        document.body.dataset.testsPassed = 'false';
+        document.body.dataset.testError = error.message;
+      }
+    }
+
+    // Run tests when page loads
+    runTests();
+  </script>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    #status { font-size: 1.5em; margin-bottom: 20px; }
+    .success { color: green; }
+    .failure { color: red; }
+    .pass { color: green; }
+    .fail { color: red; }
+  </style>
+</head>
+<body>
+  <h1>WasmLoader Browser Test</h1>
+  <div id="status">Loading...</div>
+  <div id="results"></div>
+</body>
+</html>

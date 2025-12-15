@@ -97,6 +97,13 @@ export class ScopeExtractionParser {
       // Extract all scopes with hierarchy
       this.extractScopes(tree.rootNode, scopes, content, 0, undefined, structuredImports, filePath);
 
+      // Extract file-level scopes (code outside of defined scopes)
+      const fileScopes = this.extractFileScopes(content, scopes, filePath, structuredImports);
+      scopes.push(...fileScopes);
+
+      // Sort scopes by start line to maintain order
+      scopes.sort((a, b) => a.startLine - b.startLine);
+
       // Classify scope references (link identifiers to imports/local scopes)
       const scopeIndex = this.classifyScopeReferences(scopes, structuredImports);
 
@@ -262,6 +269,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -293,7 +301,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -338,6 +347,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -366,7 +376,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -415,6 +426,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -444,7 +456,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -493,6 +506,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -522,7 +536,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -565,6 +580,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -591,7 +607,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -631,6 +648,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -656,7 +674,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -696,6 +715,7 @@ export class ScopeExtractionParser {
       : this.extractImports(nodeContent);
     const complexity = this.calculateComplexity(node);
     const linesOfCode = endLine - startLine + 1;
+    const docstring = this.extractJSDoc(node, content);
 
     return {
       name,
@@ -721,7 +741,8 @@ export class ScopeExtractionParser {
       complexity,
       linesOfCode,
       parent,
-      depth
+      depth,
+      docstring
     };
   }
 
@@ -798,6 +819,8 @@ export class ScopeExtractionParser {
         : this.extractImports(nodeContent);
       const complexity = this.calculateComplexity(valueNode);
       const linesOfCode = endLine - startLine + 1;
+      // For const functions, JSDoc is on the parent declaration node
+      const docstring = this.extractJSDoc(node, content);
 
       const scope: ScopeInfo = {
         name,
@@ -823,7 +846,8 @@ export class ScopeExtractionParser {
         complexity,
         linesOfCode,
         parent,
-        depth
+        depth,
+        docstring
       };
 
       scopes.push(scope);
@@ -918,6 +942,7 @@ export class ScopeExtractionParser {
         ? [...new Set(importReferences.map(ref => ref.source))]
         : this.extractImports(nodeContent);
       const linesOfCode = endLine - startLine + 1;
+      const docstring = this.extractJSDoc(node, content);
 
       const scope: ScopeInfo = {
         name,
@@ -943,7 +968,8 @@ export class ScopeExtractionParser {
         complexity: 1,
         linesOfCode,
         parent,
-        depth
+        depth,
+        docstring
       };
 
       scopes.push(scope);
@@ -2210,5 +2236,274 @@ export class ScopeExtractionParser {
     if (!cleaned) return undefined;
     const match = cleaned.match(/^[A-Za-z0-9_]+/);
     return match ? match[0] : undefined;
+  }
+
+  /**
+   * Extract JSDoc comment preceding a node (TypeScript/JavaScript)
+   * Looks for JSDoc comments (starting with slash-star-star) immediately before the node
+   */
+  private extractJSDoc(node: SyntaxNode, content: string): string | undefined {
+    // Get the previous sibling or check parent's children
+    let prevSibling = node.previousSibling;
+
+    // Skip over decorators to find the JSDoc
+    while (prevSibling && prevSibling.type === 'decorator') {
+      prevSibling = prevSibling.previousSibling;
+    }
+
+    // Check if previous sibling is a comment
+    if (prevSibling && prevSibling.type === 'comment') {
+      const commentText = this.getNodeText(prevSibling, content);
+      // Check if it's a JSDoc comment (starts with /**)
+      if (commentText.startsWith('/**')) {
+        return this.cleanJSDoc(commentText);
+      }
+    }
+
+    // Also check the content before the node for inline JSDoc
+    const startPos = node.startPosition;
+    const lines = content.split('\n');
+
+    // Look at previous lines for JSDoc
+    let jsdocLines: string[] = [];
+    let inJSDoc = false;
+
+    for (let i = startPos.row - 1; i >= 0 && i >= startPos.row - 20; i--) {
+      const line = lines[i]?.trim() || '';
+
+      if (line.endsWith('*/')) {
+        inJSDoc = true;
+        jsdocLines.unshift(line);
+      } else if (inJSDoc) {
+        jsdocLines.unshift(line);
+        if (line.startsWith('/**')) {
+          // Found the start of JSDoc
+          return this.cleanJSDoc(jsdocLines.join('\n'));
+        }
+      } else if (line && !line.startsWith('@') && !line.startsWith('export') && !line.startsWith('//')) {
+        // Non-empty non-decorator line before JSDoc, stop looking
+        break;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Clean JSDoc comment by removing comment markers and formatting
+   */
+  private cleanJSDoc(jsdoc: string): string {
+    return jsdoc
+      .replace(/^\/\*\*\s*/, '')  // Remove opening /**
+      .replace(/\s*\*\/$/, '')     // Remove closing */
+      .split('\n')
+      .map(line => line.replace(/^\s*\*\s?/, '')) // Remove leading * from each line
+      .join('\n')
+      .trim();
+  }
+
+  /**
+   * Extract file-level scopes (code outside of defined scopes like functions, classes, etc.)
+   * This captures top-level code, variable declarations, object literals, etc.
+   */
+  private extractFileScopes(
+    content: string,
+    existingScopes: ScopeInfo[],
+    filePath: string,
+    fileImports: ImportReference[]
+  ): ScopeInfo[] {
+    const fileScopes: ScopeInfo[] = [];
+    const lines = content.split('\n');
+    const totalLines = lines.length;
+
+    // Sort existing scopes by start line
+    const sortedScopes = [...existingScopes].sort((a, b) => a.startLine - b.startLine);
+
+    // Find gaps between scopes
+    let currentLine = 1;
+    let fileScopeIndex = 1;
+
+    for (const scope of sortedScopes) {
+      // If there's a gap before this scope, extract it
+      if (scope.startLine > currentLine) {
+        const gapStart = currentLine;
+        const gapEnd = scope.startLine - 1;
+
+        // Extract the code in this gap
+        const gapContent = lines.slice(gapStart - 1, gapEnd).join('\n').trim();
+
+        // Only create a file scope if there's meaningful content (not just whitespace/comments)
+        if (this.hasMeaningfulContent(gapContent)) {
+          const fileScope = this.createFileScope(
+            gapContent,
+            gapStart,
+            gapEnd,
+            filePath,
+            fileScopeIndex++,
+            fileImports
+          );
+          fileScopes.push(fileScope);
+        }
+      }
+
+      // Move to after this scope
+      currentLine = Math.max(currentLine, scope.endLine + 1);
+    }
+
+    // Check for code after the last scope
+    if (currentLine <= totalLines) {
+      const gapContent = lines.slice(currentLine - 1).join('\n').trim();
+      if (this.hasMeaningfulContent(gapContent)) {
+        const fileScope = this.createFileScope(
+          gapContent,
+          currentLine,
+          totalLines,
+          filePath,
+          fileScopeIndex++,
+          fileImports
+        );
+        fileScopes.push(fileScope);
+      }
+    }
+
+    return fileScopes;
+  }
+
+  /**
+   * Check if content has meaningful code (not just whitespace/comments)
+   */
+  private hasMeaningfulContent(content: string): boolean {
+    const trimmed = content.trim();
+    if (!trimmed) return false;
+
+    // Remove comments and whitespace
+    const withoutComments = trimmed
+      .replace(/\/\/.*$/gm, '') // Remove single-line comments
+      .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+      .trim();
+
+    return withoutComments.length > 0;
+  }
+
+  /**
+   * Create a file scope from code content
+   */
+  private createFileScope(
+    content: string,
+    startLine: number,
+    endLine: number,
+    filePath: string,
+    index: number,
+    fileImports: ImportReference[]
+  ): ScopeInfo {
+    const name = `file_scope_${String(index).padStart(2, '0')}`;
+    const linesOfCode = endLine - startLine + 1;
+
+    // Extract variables declared in this scope
+    const variables = this.extractTopLevelVariables(content, startLine);
+
+    // Extract identifier references
+    const referenceExclusions = new Set<string>();
+    const identifierReferences = this.extractIdentifierReferencesFromText(content, referenceExclusions, startLine);
+    const importReferences = this.resolveImportsForScope(identifierReferences, fileImports);
+
+    // Extract dependencies
+    const dependencies = this.extractDependencies(content);
+    const imports = importReferences.length
+      ? [...new Set(importReferences.map(ref => ref.source))]
+      : this.extractImports(content);
+
+    // Build signature (first meaningful line)
+    const firstLine = content.split('\n')[0]?.trim() || '';
+    const signature = firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
+
+    return {
+      name,
+      type: 'module', // Use 'module' type for file-level code
+      startLine,
+      endLine,
+      filePath,
+      signature,
+      parameters: [],
+      modifiers: [],
+      content,
+      contentDedented: content,
+      children: [],
+      variables,
+      dependencies,
+      exports: [],
+      imports,
+      importReferences,
+      identifierReferences,
+      astValid: true,
+      astIssues: [],
+      astNotes: [],
+      complexity: 1,
+      linesOfCode,
+      parent: undefined,
+      depth: 0,
+      docstring: undefined
+    };
+  }
+
+  /**
+   * Extract top-level variables from content
+   */
+  private extractTopLevelVariables(content: string, baseLine: number): VariableInfo[] {
+    const variables: VariableInfo[] = [];
+    const lines = content.split('\n');
+
+    // Match const/let/var declarations
+    const varPattern = /^\s*(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/;
+    
+    lines.forEach((line, index) => {
+      const match = line.match(varPattern);
+      if (match) {
+        variables.push({
+          name: match[2],
+          kind: match[1] as 'const' | 'let' | 'var',
+          line: baseLine + index,
+          scope: 'file_scope'
+        });
+      }
+    });
+
+    return variables;
+  }
+
+  /**
+   * Extract identifier references from text (simplified version)
+   */
+  private extractIdentifierReferencesFromText(
+    content: string,
+    exclusions: Set<string>,
+    baseLine: number
+  ): IdentifierReference[] {
+    const references: IdentifierReference[] = [];
+    const lines = content.split('\n');
+
+    // Simple identifier extraction (can be improved)
+    const identifierPattern = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
+
+    lines.forEach((line, lineIndex) => {
+      let match;
+      while ((match = identifierPattern.exec(line)) !== null) {
+        const identifier = match[1];
+        
+        // Skip if excluded or is a keyword
+        if (exclusions.has(identifier) || IDENTIFIER_STOP_WORDS.has(identifier)) {
+          continue;
+        }
+
+        references.push({
+          identifier,
+          line: baseLine + lineIndex,
+          column: match.index,
+          kind: 'unknown'
+        });
+      }
+    });
+
+    return references;
   }
 }

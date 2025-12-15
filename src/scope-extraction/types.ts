@@ -152,9 +152,10 @@ export interface ScopeInfo {
   parent?: string;
   depth: number;
 
+  // Documentation
+  docstring?: string; // JSDoc (TypeScript/JS) or docstrings (Python)
   // Python-specific fields
   decorators?: string[]; // Python decorators (@decorator)
-  docstring?: string; // Python docstrings
   value?: string; // For variables/constants: the assigned value
 }
 
