@@ -235,7 +235,7 @@ export class ScopeExtractionParser {
     const classDefLine = lines[startLine - 1];
     const nodeContent = classDefLine?.trim() || this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const returnTypeInfo = this.extractReturnTypeInfo(node, content);
@@ -321,7 +321,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters: ParameterInfo[] = [];
     const signature = this.buildSignature('interface', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
@@ -396,7 +396,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const returnTypeInfo = this.extractReturnTypeInfo(node, content);
@@ -476,7 +476,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const returnTypeInfo = this.extractReturnTypeInfo(node, content);
@@ -556,7 +556,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters: ParameterInfo[] = [];
     const signature = this.buildSignature('enum', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
@@ -627,7 +627,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters: ParameterInfo[] = [];
     const signature = this.buildSignature('type_alias', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
@@ -694,7 +694,7 @@ export class ScopeExtractionParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters: ParameterInfo[] = [];
     const signature = this.buildSignature('namespace', name, parameters, undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
@@ -798,7 +798,7 @@ export class ScopeExtractionParser {
       const returnType = returnTypeNode ? this.getNodeText(returnTypeNode, content).replace(/^:\s*/, '').trim() : undefined;
 
       // Build signature
-      const modifiers = this.extractModifiers(node.parent || node);
+      const modifiers = this.extractModifiers(node.parent || node, content);
       const signature = this.buildSignature('const', name, parameters, returnType, modifiers);
 
       const contentDedented = this.dedentContent(nodeContent);
@@ -919,7 +919,7 @@ export class ScopeExtractionParser {
       let variableType = typeNode ? this.getNodeText(typeNode, content).replace(/^:\s*/, '').trim() : undefined;
 
       // Build signature
-      const modifiers = this.extractModifiers(node.parent || node);
+      const modifiers = this.extractModifiers(node.parent || node, content);
       let signature = `${variableKind} ${name}`;
       if (variableType) {
         signature += `: ${variableType}`;
@@ -979,9 +979,9 @@ export class ScopeExtractionParser {
   }
 
   /**
-   * Extract modifiers (public, private, static, etc.)
+   * Extract modifiers (public, private, static, async, etc.)
    */
-  private extractModifiers(node: SyntaxNode): string[] {
+  private extractModifiers(node: SyntaxNode, content: string): string[] {
     const modifiers: string[] = [];
 
     for (const child of node.children) {
@@ -989,8 +989,10 @@ export class ScopeExtractionParser {
           child.type === 'static' ||
           child.type === 'abstract' ||
           child.type === 'override' ||
-          child.type === 'readonly') {
-        modifiers.push(child.type);
+          child.type === 'readonly' ||
+          child.type === 'async') {
+        // Use actual text, not node type (e.g., "private" not "accessibility_modifier")
+        modifiers.push(this.getNodeText(child, content));
       }
     }
 

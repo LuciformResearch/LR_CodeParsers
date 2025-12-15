@@ -356,7 +356,7 @@ export class StructuredTypeScriptParser {
     const classDefLine = lines[startLine - 1];
     const nodeContent = classDefLine?.trim() || this.getNodeText(node, content);
 
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const signature = this.buildSignature('class', name, parameters, returnType, modifiers);
@@ -419,7 +419,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const signature = this.buildSignature('interface', name, [], undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
     const parameters: ParameterInfo[] = [];
@@ -481,7 +481,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const signature = this.buildSignature('function', name, parameters, returnType, modifiers);
@@ -544,7 +544,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const parameters = this.extractParameters(node, content);
     const returnType = this.extractReturnType(node, content);
     const signature = this.buildSignature('method', name, parameters, returnType, modifiers);
@@ -607,7 +607,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const signature = this.buildSignature('enum', name, [], undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
     const parameters: ParameterInfo[] = [];
@@ -669,7 +669,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const signature = this.buildSignature('type_alias', name, [], undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
     const parameters: ParameterInfo[] = [];
@@ -731,7 +731,7 @@ export class StructuredTypeScriptParser {
     const endLine = node.endPosition.row + 1;
     const nodeContent = this.getNodeText(node, content);
     
-    const modifiers = this.extractModifiers(node);
+    const modifiers = this.extractModifiers(node, content);
     const signature = this.buildSignature('namespace', name, [], undefined, modifiers);
     const contentDedented = this.dedentContent(nodeContent);
     const parameters: ParameterInfo[] = [];
@@ -831,7 +831,7 @@ export class StructuredTypeScriptParser {
       const returnType = returnTypeNode ? this.getNodeText(returnTypeNode, content) : undefined;
 
       // Build signature
-      const modifiers = this.extractModifiers(node.parent || node);
+      const modifiers = this.extractModifiers(node.parent || node, content);
       const signature = this.buildSignature('const', name, parameters, returnType, modifiers);
 
       const contentDedented = this.dedentContent(nodeContent);
@@ -945,7 +945,7 @@ export class StructuredTypeScriptParser {
       let variableType = typeNode ? this.getNodeText(typeNode, content) : undefined;
 
       // Build signature
-      const modifiers = this.extractModifiers(node.parent || node);
+      const modifiers = this.extractModifiers(node.parent || node, content);
       let signature = `${variableKind} ${name}`;
       if (variableType) {
         // Remove leading colon if present (type annotation format is ": Type")
@@ -1003,20 +1003,22 @@ export class StructuredTypeScriptParser {
   /**
    * Extract modifiers (public, private, static, etc.)
    */
-  private extractModifiers(node: SyntaxNode): string[] {
+  private extractModifiers(node: SyntaxNode, content: string): string[] {
     const modifiers: string[] = [];
-    
+
     for (const child of node.children) {
       if (!child) continue;
-      if (child.type === 'accessibility_modifier' || 
-          child.type === 'static' || 
+      if (child.type === 'accessibility_modifier' ||
+          child.type === 'static' ||
           child.type === 'abstract' ||
           child.type === 'override' ||
-          child.type === 'readonly') {
-        modifiers.push(child.type);
+          child.type === 'readonly' ||
+          child.type === 'async') {
+        // Use actual text, not node type (e.g., "private" not "accessibility_modifier")
+        modifiers.push(this.getNodeText(child, content));
       }
     }
-    
+
     return modifiers;
   }
 
