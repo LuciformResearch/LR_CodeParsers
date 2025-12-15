@@ -1083,12 +1083,13 @@ export class StructuredTypeScriptParser {
 
   /**
    * Build signature string
+   * Note: In TypeScript, methods don't have a "method" keyword, so we omit the type for methods.
    */
   private buildSignature(
-    type: string, 
-    name: string, 
-    parameters: ParameterInfo[], 
-    returnType?: string, 
+    type: string,
+    name: string,
+    parameters: ParameterInfo[],
+    returnType?: string,
     modifiers: string[] = []
   ): string {
     const modStr = modifiers.length > 0 ? modifiers.join(' ') + ' ' : '';
@@ -1099,10 +1100,13 @@ export class StructuredTypeScriptParser {
       if (p.defaultValue) param += ` = ${p.defaultValue}`;
       return param;
     }).join(', ');
-    
+
     const returnStr = returnType ? `: ${returnType}` : '';
-    
-    return `${modStr}${type} ${name}(${paramsStr})${returnStr}`;
+
+    // In TypeScript: methods don't have a keyword, functions use "function", classes use "class"
+    const typeKeyword = type === 'method' ? '' : `${type} `;
+
+    return `${modStr}${typeKeyword}${name}(${paramsStr})${returnStr}`;
   }
 
   private buildReferenceExclusions(name: string, parameters: ParameterInfo[]): Set<string> {

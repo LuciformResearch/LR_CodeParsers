@@ -1483,6 +1483,7 @@ export class ScopeExtractionParser {
 
   /**
    * Build signature string
+   * Note: In TypeScript, methods don't have a "method" keyword, so we omit the type for methods.
    */
   private buildSignature(
     type: string,
@@ -1502,7 +1503,11 @@ export class ScopeExtractionParser {
 
     const returnStr = returnType ? `: ${returnType}` : '';
 
-    return `${modStr}${type} ${name}(${paramsStr})${returnStr}`;
+    // In TypeScript: methods don't have a keyword, functions use "function", classes use "class"
+    // Only include type keyword for: function, class, interface, enum, type, namespace, const
+    const typeKeyword = type === 'method' ? '' : `${type} `;
+
+    return `${modStr}${typeKeyword}${name}(${paramsStr})${returnStr}`;
   }
 
   /**
