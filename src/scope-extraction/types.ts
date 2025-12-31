@@ -170,4 +170,6 @@ export interface ScopeFileAnalysis {
   importReferences: ImportReference[];
   astValid: boolean;
   astIssues: string[];
+  /** SHA-256 hash of raw file content (for incremental ingestion) */
+  contentHash?: string;
 }

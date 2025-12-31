@@ -81,6 +81,7 @@ export class GenericCodeParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const lines = content.split('\n');
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const ext = path.extname(filePath).toLowerCase();
@@ -98,6 +99,7 @@ export class GenericCodeParser {
     // Extract scopes using pattern matching + brace tracking
     const scopes = this.extractScopes(content, lines, hints, options);
 
+    console.log(`📊 Parsed ${filePath}: ${scopes.length} scopes, ${imports.length} imports`);
     return {
       file: filePath,
       hash,

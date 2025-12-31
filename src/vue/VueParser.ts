@@ -52,6 +52,7 @@ export class VueParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const lines = content.split('\n');
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
 
@@ -177,6 +178,7 @@ export class VueParser {
       });
     }
 
+    console.log(`📊 Parsed ${filePath}: ${blocks.length} blocks, ${relationships.length} relationships`);
     return {
       sfc,
       blocks,

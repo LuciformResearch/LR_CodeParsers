@@ -66,6 +66,7 @@ export class SvelteParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const tree = this.parser!.parse(content);
     const lines = content.split('\n');
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -210,6 +211,7 @@ export class SvelteParser {
       });
     }
 
+    console.log(`📊 Parsed ${filePath}: ${blocks.length} blocks, ${relationships.length} relationships`);
     return {
       component,
       blocks,

@@ -164,6 +164,7 @@ export class MarkdownParser {
     content: string,
     options: MarkdownParseOptions = {}
   ): Promise<MarkdownParseResult> {
+    console.log(`⏳ Parsing ${filePath}...`);
     const opts: Required<MarkdownParseOptions> = {
       extractSections: options.extractSections ?? true,
       extractLinks: options.extractLinks ?? true,
@@ -234,6 +235,7 @@ export class MarkdownParser {
     // Build relationships
     const relationships = this.buildRelationships(docUuid, links, images, codeBlocks);
 
+    console.log(`📊 Parsed ${filePath}: ${sections.length} sections, ${codeBlocks.length} code blocks`);
     return { document, relationships };
   }
 

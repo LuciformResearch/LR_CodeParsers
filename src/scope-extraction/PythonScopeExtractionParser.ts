@@ -84,6 +84,7 @@ export class PythonScopeExtractionParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     try {
       const tree = this.parser!.parse(content);
       const scopes: ScopeInfo[] = [];
@@ -97,8 +98,8 @@ export class PythonScopeExtractionParser {
       // Classify scope references (link identifiers to imports/local scopes)
       const scopeIndex = this.classifyScopeReferences(scopes, structuredImports);
 
-      // Attach signature references (link return types to local scopes)
-      this.attachSignatureReferences(scopes, scopeIndex);
+      // Attach signature references (link return types/params to local scopes AND imports)
+      this.attachSignatureReferences(scopes, scopeIndex, structuredImports);
 
       // Analyze file-level metadata
       const imports = structuredImports.length
@@ -1283,6 +1284,13 @@ export class PythonScopeExtractionParser {
             ref.kind = 'import';
             ref.source = importMatch.source;
             ref.isLocalImport = importMatch.isLocal;
+            // Also add to importReferences if not already present
+            if (!scope.importReferences.some(ir =>
+              ir.source === importMatch.source &&
+              (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+            )) {
+              scope.importReferences.push(importMatch);
+            }
             return ref;
           }
 
@@ -1304,38 +1312,83 @@ export class PythonScopeExtractionParser {
   }
 
   /**
-   * Attach signature references (link return types to local scopes)
+   * Attach signature references (link return types/params to local scopes AND imports)
+   * Extracts ALL type identifiers from return types (e.g., Optional[MergeStats] → MergeStats)
    */
   private attachSignatureReferences(
     scopes: ScopeInfo[],
-    scopeIndex: Map<string, ScopeInfo[]>
+    scopeIndex: Map<string, ScopeInfo[]>,
+    fileImports: ImportReference[]
   ): void {
+    // Build import alias map for quick lookup
+    const importMap = new Map<string, ImportReference>();
+    for (const imp of fileImports) {
+      const key = imp.alias ?? imp.imported;
+      if (key) {
+        importMap.set(key, imp);
+      }
+    }
+
     for (const scope of scopes) {
-      const returnType = this.extractBaseTypeIdentifier(scope.returnType);
-      if (!returnType) continue;
-      const targets = scopeIndex.get(returnType);
-      if (!targets || !targets.length) continue;
-      const target = targets[0];
-      const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
-      scope.identifierReferences.push({
-        identifier: returnType,
-        line: scope.startLine,
-        context: scope.signature,
-        kind: 'local_scope',
-        targetScope: targetId
-      });
+      // Extract ALL type identifiers from the return type
+      const returnTypes = this.extractAllTypeIdentifiers(scope.returnType);
+
+      for (const typeId of returnTypes) {
+        // Check if we already have this reference
+        const existingRef = scope.identifierReferences.find(
+          ref => ref.identifier === typeId && (ref.kind === 'local_scope' || ref.kind === 'import')
+        );
+        if (existingRef) continue;
+
+        // First check local scopes
+        const targets = scopeIndex.get(typeId);
+        if (targets && targets.length > 0) {
+          const target = targets[0];
+          const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
+          scope.identifierReferences.push({
+            identifier: typeId,
+            line: scope.startLine,
+            context: scope.signature,
+            kind: 'local_scope',
+            targetScope: targetId
+          });
+          continue;
+        }
+
+        // Then check imports
+        const importMatch = importMap.get(typeId);
+        if (importMatch) {
+          scope.identifierReferences.push({
+            identifier: typeId,
+            line: scope.startLine,
+            context: scope.signature,
+            kind: 'import',
+            source: importMatch.source,
+            isLocalImport: importMatch.isLocal
+          });
+          // Also add to importReferences if not already present
+          if (!scope.importReferences.some(ir =>
+            ir.source === importMatch.source &&
+            (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+          )) {
+            scope.importReferences.push(importMatch);
+          }
+        }
+      }
     }
 
     // Also attach type references from parameters
-    this.attachParameterTypeReferences(scopes, scopeIndex);
+    this.attachParameterTypeReferences(scopes, scopeIndex, importMap);
   }
 
   /**
    * Extract type references from parameters
+   * Extracts ALL type identifiers from parameter types (e.g., Dict[str, MergeNode] → MergeNode)
    */
   private attachParameterTypeReferences(
     scopes: ScopeInfo[],
-    scopeIndex: Map<string, ScopeInfo[]>
+    scopeIndex: Map<string, ScopeInfo[]>,
+    importMap: Map<string, ImportReference>
   ): void {
     // First pass: Add type references from parameters to methods
     for (const scope of scopes) {
@@ -1343,26 +1396,48 @@ export class PythonScopeExtractionParser {
       if (scope.parameters && scope.parameters.length > 0) {
         for (const param of scope.parameters) {
           if (param.type) {
-            const paramType = this.extractBaseTypeIdentifier(param.type);
-            if (paramType) {
-              const targets = scopeIndex.get(paramType);
+            // Extract ALL type identifiers from the parameter type
+            const paramTypes = this.extractAllTypeIdentifiers(param.type);
+
+            for (const typeId of paramTypes) {
+              // Check if we already have this reference
+              const existingRef = scope.identifierReferences.find(
+                ref => ref.identifier === typeId && (ref.kind === 'local_scope' || ref.kind === 'import')
+              );
+              if (existingRef) continue;
+
+              // First check local scopes
+              const targets = scopeIndex.get(typeId);
               if (targets && targets.length > 0) {
                 const target = targets[0];
                 const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
+                scope.identifierReferences.push({
+                  identifier: typeId,
+                  line: scope.startLine,
+                  context: scope.signature,
+                  kind: 'local_scope',
+                  targetScope: targetId
+                });
+                continue;
+              }
 
-                // Check if we already have this reference
-                const existingRef = scope.identifierReferences.find(
-                  ref => ref.identifier === paramType && ref.kind === 'local_scope'
-                );
-
-                if (!existingRef) {
-                  scope.identifierReferences.push({
-                    identifier: paramType,
-                    line: scope.startLine,
-                    context: scope.signature,
-                    kind: 'local_scope',
-                    targetScope: targetId
-                  });
+              // Then check imports
+              const importMatch = importMap.get(typeId);
+              if (importMatch) {
+                scope.identifierReferences.push({
+                  identifier: typeId,
+                  line: scope.startLine,
+                  context: scope.signature,
+                  kind: 'import',
+                  source: importMatch.source,
+                  isLocalImport: importMatch.isLocal
+                });
+                // Also add to importReferences if not already present
+                if (!scope.importReferences.some(ir =>
+                  ir.source === importMatch.source &&
+                  (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+                )) {
+                  scope.importReferences.push(importMatch);
                 }
               }
             }
@@ -1413,15 +1488,32 @@ export class PythonScopeExtractionParser {
   }
 
   /**
-   * Extract base type identifier from a type string
+   * Extract base type identifier from a type string (first identifier only)
+   * @deprecated Use extractAllTypeIdentifiers for complete type extraction
    */
   private extractBaseTypeIdentifier(type?: string): string | undefined {
-    if (!type) return undefined;
+    const types = this.extractAllTypeIdentifiers(type);
+    return types.length > 0 ? types[0] : undefined;
+  }
+
+  /**
+   * Extract ALL type identifiers from a type string
+   * Handles generics like Optional[MergeStats], Dict[str, MergeNode], Union types, etc.
+   * Only returns PascalCase identifiers (user-defined types start with uppercase)
+   * The scopeIndex lookup will naturally filter out types not defined in the project
+   */
+  private extractAllTypeIdentifiers(type?: string): string[] {
+    if (!type) return [];
     const cleaned = type.trim();
-    if (!cleaned) return undefined;
-    // Match the base type name (before [ or |)
-    const match = cleaned.match(/^[A-Za-z_][A-Za-z0-9_]*/);
-    return match ? match[0] : undefined;
+    if (!cleaned) return [];
+
+    // Match all identifiers that start with uppercase (PascalCase = likely user-defined types)
+    // This naturally excludes: str, int, float, bool, None, etc.
+    const allMatches = cleaned.match(/\b[A-Z][A-Za-z0-9_]*\b/g);
+    if (!allMatches) return [];
+
+    // Remove duplicates
+    return [...new Set(allMatches)];
   }
 
   /**

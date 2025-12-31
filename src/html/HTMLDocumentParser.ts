@@ -74,6 +74,7 @@ export class HTMLDocumentParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const tree = this.parser!.parse(content);
     const domTree = this.buildDOMTree(tree.rootNode, content);
     const dom = new DOMTree(domTree);
@@ -197,6 +198,7 @@ export class HTMLDocumentParser {
       });
     }
 
+    console.log(`📊 Parsed ${filePath}: ${scopes.length} scopes, ${relationships.length} relationships`);
     return {
       document,
       scopes,

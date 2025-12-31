@@ -69,6 +69,7 @@ export class SCSSParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const tree = this.parser!.parse(content);
     const lines = content.split('\n');
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -183,6 +184,7 @@ export class SCSSParser {
       });
     }
 
+    console.log(`📊 Parsed ${filePath}: ${rules.length} rules, ${mixins.length} mixins, ${variables.length} variables`);
     return {
       stylesheet,
       rules: options.includeRules !== false ? rules : [],

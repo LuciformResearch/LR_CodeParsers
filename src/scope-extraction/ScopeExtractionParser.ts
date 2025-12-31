@@ -87,6 +87,7 @@ export class ScopeExtractionParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     try {
       const tree = this.parser!.parse(content);
       const scopes: ScopeInfo[] = [];
@@ -107,8 +108,8 @@ export class ScopeExtractionParser {
       // Classify scope references (link identifiers to imports/local scopes)
       const scopeIndex = this.classifyScopeReferences(scopes, structuredImports);
 
-      // Attach signature references (link return types to local scopes)
-      this.attachSignatureReferences(scopes, scopeIndex);
+      // Attach signature references (link return types/params to local scopes AND imports)
+      this.attachSignatureReferences(scopes, scopeIndex, structuredImports);
 
       // Analyze file-level metadata
       const imports = structuredImports.length
@@ -2096,6 +2097,10 @@ export class ScopeExtractionParser {
     }
 
     for (const scope of scopes) {
+      // First, ensure all used imports are in identifierReferences
+      // This catches imports that extractIdentifierReferences may have missed
+      this.ensureImportReferencesTracked(scope, fileImports, aliasMap);
+
       scope.identifierReferences = scope.identifierReferences
         .map((ref) => {
           const aliasKey = ref.qualifier ?? ref.identifier;
@@ -2105,6 +2110,13 @@ export class ScopeExtractionParser {
             ref.kind = 'import';
             ref.source = importMatch.source;
             ref.isLocalImport = importMatch.isLocal;
+            // Also add to importReferences if not already present
+            if (!scope.importReferences.some(ir =>
+              ir.source === importMatch.source &&
+              (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+            )) {
+              scope.importReferences.push(importMatch);
+            }
             return ref;
           }
 
@@ -2126,38 +2138,135 @@ export class ScopeExtractionParser {
   }
 
   /**
-   * Attach signature references (link return types to local scopes)
+   * Ensure imported symbols used in scope content are tracked as references.
+   * This catches imports that extractIdentifierReferences may have missed
+   * (e.g., due to AST traversal limitations or edge cases).
+   */
+  private ensureImportReferencesTracked(
+    scope: ScopeInfo,
+    fileImports: ImportReference[],
+    aliasMap: Map<string, ImportReference>
+  ): void {
+    for (const imp of fileImports) {
+      const symbolName = imp.alias ?? imp.imported;
+
+      // Skip wildcard and default imports without alias, and side-effect imports
+      if (!symbolName || symbolName === '*' || imp.kind === 'side-effect') continue;
+
+      // Check if this symbol is already tracked in references
+      const existingRef = scope.identifierReferences.find(
+        ref => ref.identifier === symbolName || ref.qualifier === symbolName
+      );
+
+      if (existingRef) continue; // Already tracked
+
+      // Check if the symbol appears in the scope content (as a word boundary match)
+      // Use a regex that matches the symbol as a whole word (not part of another identifier)
+      const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`);
+      const match = regex.exec(scope.content);
+
+      if (match) {
+        // Calculate line number from match position
+        const beforeMatch = scope.content.substring(0, match.index);
+        const lineOffset = (beforeMatch.match(/\n/g) || []).length;
+
+        // Add the reference (will be classified as 'import' in the main loop)
+        scope.identifierReferences.push({
+          identifier: symbolName,
+          line: scope.startLine + lineOffset,
+          column: match.index - beforeMatch.lastIndexOf('\n') - 1,
+          context: this.getLineFromContent(scope.content, lineOffset + 1),
+          kind: undefined // Will be set to 'import' by the classification logic
+        });
+      }
+    }
+  }
+
+  /**
+   * Escape special regex characters in a string
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Attach signature references (link return types/params to local scopes AND imports)
+   * Extracts ALL type identifiers from return types (e.g., Promise<MergeStats> → MergeStats)
    */
   private attachSignatureReferences(
     scopes: ScopeInfo[],
-    scopeIndex: Map<string, ScopeInfo[]>
+    scopeIndex: Map<string, ScopeInfo[]>,
+    fileImports: ImportReference[]
   ): void {
+    // Build import alias map for quick lookup
+    const importMap = new Map<string, ImportReference>();
+    for (const imp of fileImports) {
+      const key = imp.alias ?? imp.imported;
+      if (key) {
+        importMap.set(key, imp);
+      }
+    }
+
     for (const scope of scopes) {
-      const returnType = this.extractBaseTypeIdentifier(scope.returnType);
-      if (!returnType) continue;
-      const targets = scopeIndex.get(returnType);
-      if (!targets || !targets.length) continue;
-      const target = targets[0];
-      const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
-      scope.identifierReferences.push({
-        identifier: returnType,
-        line: scope.startLine,
-        context: scope.signature,
-        kind: 'local_scope',
-        targetScope: targetId
-      });
+      // Extract ALL type identifiers from the return type
+      const returnTypes = this.extractAllTypeIdentifiers(scope.returnType);
+
+      for (const typeId of returnTypes) {
+        // Check if we already have this reference
+        const existingRef = scope.identifierReferences.find(
+          ref => ref.identifier === typeId && (ref.kind === 'local_scope' || ref.kind === 'import')
+        );
+        if (existingRef) continue;
+
+        // First check local scopes
+        const targets = scopeIndex.get(typeId);
+        if (targets && targets.length > 0) {
+          const target = targets[0];
+          const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
+          scope.identifierReferences.push({
+            identifier: typeId,
+            line: scope.startLine,
+            context: scope.signature,
+            kind: 'local_scope',
+            targetScope: targetId
+          });
+          continue;
+        }
+
+        // Then check imports
+        const importMatch = importMap.get(typeId);
+        if (importMatch) {
+          scope.identifierReferences.push({
+            identifier: typeId,
+            line: scope.startLine,
+            context: scope.signature,
+            kind: 'import',
+            source: importMatch.source,
+            isLocalImport: importMatch.isLocal
+          });
+          // Also add to importReferences if not already present
+          if (!scope.importReferences.some(ir =>
+            ir.source === importMatch.source &&
+            (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+          )) {
+            scope.importReferences.push(importMatch);
+          }
+        }
+      }
     }
 
     // Also attach type references from class fields and method parameters
-    this.attachClassFieldTypeReferences(scopes, scopeIndex);
+    this.attachClassFieldTypeReferences(scopes, scopeIndex, importMap);
   }
 
   /**
    * Extract type references from class fields and method parameters
+   * Extracts ALL type identifiers from parameter types (e.g., Map<string, MergeNode> → MergeNode)
    */
   private attachClassFieldTypeReferences(
     scopes: ScopeInfo[],
-    scopeIndex: Map<string, ScopeInfo[]>
+    scopeIndex: Map<string, ScopeInfo[]>,
+    importMap: Map<string, ImportReference>
   ): void {
     // First pass: Add type references from parameters to methods
     for (const scope of scopes) {
@@ -2165,26 +2274,50 @@ export class ScopeExtractionParser {
       if (scope.parameters && scope.parameters.length > 0) {
         for (const param of scope.parameters) {
           if (param.type) {
-            const paramType = this.extractBaseTypeIdentifier(param.type);
-            if (paramType) {
-              const targets = scopeIndex.get(paramType);
+            // Extract ALL type identifiers from the parameter type
+            const paramTypes = this.extractAllTypeIdentifiers(param.type);
+
+            for (const typeId of paramTypes) {
+              // Check if we already have this reference
+              const existingRef = scope.identifierReferences.find(
+                ref => ref.identifier === typeId && (ref.kind === 'local_scope' || ref.kind === 'import')
+              );
+              if (existingRef) {
+                continue;
+              }
+
+              // First check local scopes
+              const targets = scopeIndex.get(typeId);
               if (targets && targets.length > 0) {
                 const target = targets[0];
                 const targetId = `${target.filePath ?? ''}::${target.name}:${target.startLine}-${target.endLine}`;
+                scope.identifierReferences.push({
+                  identifier: typeId,
+                  line: scope.startLine,
+                  context: scope.signature,
+                  kind: 'local_scope',
+                  targetScope: targetId
+                });
+                continue;
+              }
 
-                // Check if we already have this reference
-                const existingRef = scope.identifierReferences.find(
-                  ref => ref.identifier === paramType && ref.kind === 'local_scope'
-                );
-
-                if (!existingRef) {
-                  scope.identifierReferences.push({
-                    identifier: paramType,
-                    line: scope.startLine,
-                    context: scope.signature,
-                    kind: 'local_scope',
-                    targetScope: targetId
-                  });
+              // Then check imports
+              const importMatch = importMap.get(typeId);
+              if (importMatch) {
+                scope.identifierReferences.push({
+                  identifier: typeId,
+                  line: scope.startLine,
+                  context: scope.signature,
+                  kind: 'import',
+                  source: importMatch.source,
+                  isLocalImport: importMatch.isLocal
+                });
+                // Also add to importReferences if not already present
+                if (!scope.importReferences.some(ir =>
+                  ir.source === importMatch.source &&
+                  (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+                )) {
+                  scope.importReferences.push(importMatch);
                 }
               }
             }
@@ -2235,14 +2368,32 @@ export class ScopeExtractionParser {
   }
 
   /**
-   * Extract base type identifier from a type string
+   * Extract base type identifier from a type string (first identifier only)
+   * @deprecated Use extractAllTypeIdentifiers for complete type extraction
    */
   private extractBaseTypeIdentifier(type?: string): string | undefined {
-    if (!type) return undefined;
+    const types = this.extractAllTypeIdentifiers(type);
+    return types.length > 0 ? types[0] : undefined;
+  }
+
+  /**
+   * Extract ALL type identifiers from a type string
+   * Handles generics like Promise<MergeStats>, Map<string, MergeNode[]>, unions, intersections, etc.
+   * Only returns PascalCase identifiers (user-defined types start with uppercase)
+   * The scopeIndex lookup will naturally filter out types not defined in the project
+   */
+  private extractAllTypeIdentifiers(type?: string): string[] {
+    if (!type) return [];
     const cleaned = type.trim();
-    if (!cleaned) return undefined;
-    const match = cleaned.match(/^[A-Za-z0-9_]+/);
-    return match ? match[0] : undefined;
+    if (!cleaned) return [];
+
+    // Match all identifiers that start with uppercase (PascalCase = likely user-defined types)
+    // This naturally excludes: string, number, boolean, void, null, undefined, etc.
+    const allMatches = cleaned.match(/\b[A-Z][A-Za-z0-9_]*\b/g);
+    if (!allMatches) return [];
+
+    // Remove duplicates
+    return [...new Set(allMatches)];
   }
 
   /**

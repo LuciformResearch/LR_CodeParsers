@@ -205,6 +205,7 @@ export class StructuredTypeScriptParser {
       await this.initializeTS();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     try {
       // Choose the right parser based on file extension
       const parser = isTSX ? this.tsxParser : this.tsParser;

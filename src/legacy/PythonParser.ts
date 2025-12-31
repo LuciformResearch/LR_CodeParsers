@@ -105,6 +105,7 @@ export class PythonParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     const tree = this.parser!.parse(content);
     const scopes: PythonScope[] = [];
     const scopeNodes: Map<PythonScope, SyntaxNode> = new Map();

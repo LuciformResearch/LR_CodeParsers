@@ -123,6 +123,7 @@ export class StructuredTypeScriptParser {
       await this.initialize();
     }
 
+    console.log(`⏳ Parsing ${filePath}...`);
     try {
       const tree = this.parser!.parse(content);
       const scopes: TypeScriptScope[] = [];
