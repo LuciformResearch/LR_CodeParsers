@@ -15,8 +15,10 @@ export interface ImportReference {
   source: string;
   imported: string;
   alias?: string;
-  kind: 'default' | 'named' | 'namespace' | 'side-effect';
+  kind: 'default' | 'named' | 'namespace' | 'side-effect' | 'dynamic';
   isLocal: boolean;
+  /** Line number where this import appears (useful for dynamic imports inside functions) */
+  line?: number;
 }
 
 export interface IdentifierReference {

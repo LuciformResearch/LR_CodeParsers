@@ -19,6 +19,11 @@ GRAMMARS=(
   "tree-sitter-python:tree-sitter-python.wasm"
   "tree-sitter-html:tree-sitter-html.wasm"
   "tree-sitter-css:tree-sitter-css.wasm"
+  "tree-sitter-c:tree-sitter-c.wasm"
+  "tree-sitter-cpp:tree-sitter-cpp.wasm"
+  "tree-sitter-rust:tree-sitter-rust.wasm"
+  "tree-sitter-c-sharp:tree-sitter-c-sharp.wasm"
+  "tree-sitter-go:tree-sitter-go.wasm"
 )
 
 for grammar in "${GRAMMARS[@]}"; do

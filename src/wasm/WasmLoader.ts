@@ -138,14 +138,21 @@ export class WasmLoader {
     const grammarsDir = join(__dirname, 'grammars');
     let wasmPath: string;
 
-    if (language === 'typescript') {
-      wasmPath = join(grammarsDir, 'tree-sitter-typescript.wasm');
-    } else if (language === 'python') {
-      wasmPath = join(grammarsDir, 'tree-sitter-python.wasm');
-    } else if (language === 'html') {
-      wasmPath = join(grammarsDir, 'tree-sitter-html.wasm');
-    } else if (language === 'css') {
-      wasmPath = join(grammarsDir, 'tree-sitter-css.wasm');
+    // Map language to WASM file name
+    const wasmFileMap: Record<string, string> = {
+      typescript: 'tree-sitter-typescript.wasm',
+      python: 'tree-sitter-python.wasm',
+      html: 'tree-sitter-html.wasm',
+      css: 'tree-sitter-css.wasm',
+      c: 'tree-sitter-c.wasm',
+      cpp: 'tree-sitter-cpp.wasm',
+      rust: 'tree-sitter-rust.wasm',
+      csharp: 'tree-sitter-c-sharp.wasm',
+      go: 'tree-sitter-go.wasm',
+    };
+
+    if (wasmFileMap[language]) {
+      wasmPath = join(grammarsDir, wasmFileMap[language]);
     } else if (language === 'scss') {
       // TODO: compile scss grammar with build:wasm script
       const { createRequire } = await import('module');

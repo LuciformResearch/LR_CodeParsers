@@ -1127,10 +1127,21 @@ export class ScopeExtractionParser {
       }
     }
 
-    // Look for implements clause (interfaces)
-    const implementsClause = node.children.find(
+    // Look for implements clause
+    // For classes, implements_clause is INSIDE class_heritage, not a direct child
+    let implementsClause = node.children.find(
       child => child.type === 'implements_clause' || child.type === 'class_implements_clause'
     );
+
+    // If not found directly, look inside class_heritage
+    if (!implementsClause) {
+      const heritageNode = node.children.find(child => child.type === 'class_heritage');
+      if (heritageNode) {
+        implementsClause = heritageNode.children.find(
+          (child: any) => child.type === 'implements_clause' || child.type === 'class_implements_clause'
+        );
+      }
+    }
 
     if (implementsClause) {
       const types: string[] = [];
@@ -1203,34 +1214,43 @@ export class ScopeExtractionParser {
   private extractDecoratorDetails(node: SyntaxNode, content: string): DecoratorInfo[] {
     const decorators: DecoratorInfo[] = [];
 
-    for (const child of node.children) {
-      if (child.type === 'decorator') {
-        const nameNode = child.children.find(
-          n => n.type === 'identifier' || n.type === 'call_expression'
-        );
+    // For TypeScript, decorators may be on the parent export_statement, not the class/function itself
+    // e.g., @Injectable() export class Foo {} - decorator is child of export_statement, not class_declaration
+    const nodesToCheck = [node];
+    if (node.parent?.type === 'export_statement') {
+      nodesToCheck.unshift(node.parent);
+    }
 
-        if (!nameNode) continue;
+    for (const nodeToCheck of nodesToCheck) {
+      for (const child of nodeToCheck.children) {
+        if (child.type === 'decorator') {
+          const nameNode = child.children.find(
+            n => n.type === 'identifier' || n.type === 'call_expression'
+          );
 
-        let name: string;
-        let args: string | undefined;
+          if (!nameNode) continue;
 
-        if (nameNode.type === 'call_expression') {
-          // Decorator with arguments: @Entity({ tableName: 'users' })
-          const funcNode = nameNode.childForFieldName('function');
-          name = funcNode ? this.getNodeText(funcNode, content) : '';
+          let name: string;
+          let args: string | undefined;
 
-          const argsNode = nameNode.childForFieldName('arguments');
-          args = argsNode ? this.getNodeText(argsNode, content) : undefined;
-        } else {
-          // Simple decorator: @Injectable
-          name = this.getNodeText(nameNode, content);
+          if (nameNode.type === 'call_expression') {
+            // Decorator with arguments: @Entity({ tableName: 'users' })
+            const funcNode = nameNode.childForFieldName('function');
+            name = funcNode ? this.getNodeText(funcNode, content) : '';
+
+            const argsNode = nameNode.childForFieldName('arguments');
+            args = argsNode ? this.getNodeText(argsNode, content) : undefined;
+          } else {
+            // Simple decorator: @Injectable
+            name = this.getNodeText(nameNode, content);
+          }
+
+          decorators.push({
+            name: name.replace(/^@/, ''), // Remove @ prefix
+            arguments: args,
+            line: child.startPosition.row + 1
+          });
         }
-
-        decorators.push({
-          name: name.replace(/^@/, ''), // Remove @ prefix
-          arguments: args,
-          line: child.startPosition.row + 1
-        });
       }
     }
 
@@ -2027,6 +2047,77 @@ export class ScopeExtractionParser {
         imported: '*',
         kind: 'side-effect',
         isLocal
+      });
+    }
+
+    // Dynamic imports with destructuring: const { foo, bar } = await import('./module')
+    // Also handles: const module = await import('./module')
+    const dynamicImportRegex = /(?:const|let|var)\s*(\{[^}]+\}|\w+)\s*=\s*await\s+import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    while ((match = dynamicImportRegex.exec(content)) !== null) {
+      const specifier = match[1].trim();
+      const source = match[2];
+      const line = content.substring(0, match.index).split('\n').length;
+
+      // Determine if import is local
+      let isLocal = source.startsWith('.') || source.startsWith('/');
+      if (!isLocal && resolver) {
+        isLocal = resolver.isPathAlias(source);
+      } else if (!isLocal && source.startsWith('@/')) {
+        isLocal = true;
+      }
+
+      if (specifier.startsWith('{')) {
+        // Destructured: const { foo, bar as baz } = await import('./module')
+        const inner = specifier.replace(/^{|}$/g, '');
+        inner.split(',')
+          .map(val => val.trim())
+          .filter(Boolean)
+          .forEach(entry => {
+            const [symbol, alias] = entry.split(/\s+as\s+/).map(token => token.trim());
+            if (symbol) {
+              pushRef({
+                source,
+                imported: symbol,
+                alias: alias || undefined,
+                kind: 'dynamic',
+                isLocal,
+                line
+              });
+            }
+          });
+      } else {
+        // Namespace-like: const module = await import('./module')
+        pushRef({
+          source,
+          imported: '*',
+          alias: specifier,
+          kind: 'dynamic',
+          isLocal,
+          line
+        });
+      }
+    }
+
+    // Also detect inline dynamic imports: (await import('./module')).foo or .default
+    const inlineDynamicRegex = /\(\s*await\s+import\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\)\.(\w+)/g;
+    while ((match = inlineDynamicRegex.exec(content)) !== null) {
+      const source = match[1];
+      const symbol = match[2];
+      const line = content.substring(0, match.index).split('\n').length;
+
+      let isLocal = source.startsWith('.') || source.startsWith('/');
+      if (!isLocal && resolver) {
+        isLocal = resolver.isPathAlias(source);
+      } else if (!isLocal && source.startsWith('@/')) {
+        isLocal = true;
+      }
+
+      pushRef({
+        source,
+        imported: symbol === 'default' ? 'default' : symbol,
+        kind: 'dynamic',
+        isLocal,
+        line
       });
     }
 
