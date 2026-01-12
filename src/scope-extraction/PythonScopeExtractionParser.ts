@@ -44,6 +44,7 @@ const BUILTIN_IDENTIFIERS = new Set([
   'KeyError', 'IndexError', 'AttributeError', 'ImportError', 'ModuleNotFoundError'
 ]);
 
+
 export class PythonScopeExtractionParser {
   private parser: any = null;
   private language: SupportedLanguage;
@@ -92,11 +93,14 @@ export class PythonScopeExtractionParser {
       // Extract structured imports first
       const structuredImports = this.extractStructuredImports(content);
 
+      // Extract TypeVar bounds (T = TypeVar('T', bound=SomeClass))
+      const typeVarBounds = this.extractTypeVarBounds(content);
+
       // Extract all scopes with hierarchy
       this.extractScopes(tree.rootNode, scopes, content, 0, undefined, structuredImports, filePath);
 
       // Classify scope references (link identifiers to imports/local scopes)
-      const scopeIndex = this.classifyScopeReferences(scopes, structuredImports);
+      const scopeIndex = this.classifyScopeReferences(scopes, structuredImports, typeVarBounds);
 
       // Attach signature references (link return types/params to local scopes AND imports)
       this.attachSignatureReferences(scopes, scopeIndex, structuredImports);
@@ -1197,7 +1201,9 @@ export class PythonScopeExtractionParser {
         const moduleName = parts[0].trim();
         const alias = parts[1]?.trim();
 
-        const isLocal = moduleName.startsWith('.');
+        // Be optimistic: mark all imports as potentially local
+        // The actual file resolution will determine if it's a real local import
+        const isLocal = true;
 
         pushRef({
           source: moduleName,
@@ -1215,7 +1221,9 @@ export class PythonScopeExtractionParser {
       const source = match[1];
       const imports = match[2].split(',').map(s => s.trim());
 
-      const isLocal = source.startsWith('.');
+      // Be optimistic: mark all imports as potentially local
+      // The actual file resolution will determine if it's a real local import
+      const isLocal = true;
 
       for (const imp of imports) {
         if (imp === '*') {
@@ -1245,6 +1253,30 @@ export class PythonScopeExtractionParser {
   }
 
   /**
+   * Extract TypeVar bounds from content
+   * Parses patterns like: T = TypeVar('T', bound=BaseEntity)
+   * Returns a map of TypeVar name → bound type name
+   */
+  private extractTypeVarBounds(content: string): Map<string, string> {
+    const bounds = new Map<string, string>();
+
+    // Match: T = TypeVar('T', bound=SomeClass) or T = TypeVar("T", bound=SomeClass)
+    // Also handles: T = TypeVar('T', bound=module.SomeClass)
+    const typeVarRegex = /(\w+)\s*=\s*TypeVar\s*\(\s*['"][^'"]+['"]\s*,\s*bound\s*=\s*([\w.]+)\s*\)/g;
+
+    let match;
+    while ((match = typeVarRegex.exec(content)) !== null) {
+      const varName = match[1];
+      const boundType = match[2];
+      // Extract just the class name if it's qualified (e.g., module.Class -> Class)
+      const simpleBound = boundType.includes('.') ? boundType.split('.').pop()! : boundType;
+      bounds.set(varName, simpleBound);
+    }
+
+    return bounds;
+  }
+
+  /**
    * Get a specific line from content
    */
   private getLineFromContent(content: string, lineNumber: number): string | undefined {
@@ -1254,10 +1286,12 @@ export class PythonScopeExtractionParser {
 
   /**
    * Classify scope references (link identifiers to imports/local scopes)
+   * Also handles TypeVar bounds - when a scope uses a TypeVar, add the bound type as a reference
    */
   private classifyScopeReferences(
     scopes: ScopeInfo[],
-    fileImports: ImportReference[]
+    fileImports: ImportReference[],
+    typeVarBounds: Map<string, string> = new Map()
   ): Map<string, ScopeInfo[]> {
     const aliasMap = new Map<string, ImportReference>();
     for (const imp of fileImports) {
@@ -1275,6 +1309,9 @@ export class PythonScopeExtractionParser {
     }
 
     for (const scope of scopes) {
+      // Track TypeVar bounds used in this scope to add as additional references
+      const typeVarBoundsToAdd: IdentifierReference[] = [];
+
       scope.identifierReferences = scope.identifierReferences
         .map((ref) => {
           const aliasKey = ref.qualifier ?? ref.identifier;
@@ -1287,11 +1324,37 @@ export class PythonScopeExtractionParser {
             // Also add to importReferences if not already present
             if (!scope.importReferences.some(ir =>
               ir.source === importMatch.source &&
-              (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+              ir.imported === importMatch.imported
             )) {
               scope.importReferences.push(importMatch);
             }
             return ref;
+          }
+
+          // Check if this is a TypeVar with a bound
+          const boundType = typeVarBounds.get(ref.identifier);
+          if (boundType) {
+            // Check if the bound type is imported
+            const boundImport = aliasMap.get(boundType);
+            if (boundImport) {
+              // Add the bound type as an additional reference
+              typeVarBoundsToAdd.push({
+                identifier: boundType,
+                line: ref.line,
+                column: ref.column,
+                context: ref.context,
+                kind: 'import',
+                source: boundImport.source,
+                isLocalImport: boundImport.isLocal
+              });
+              // Also add to importReferences if not already present
+              if (!scope.importReferences.some(ir =>
+                ir.source === boundImport.source &&
+                ir.imported === boundImport.imported
+              )) {
+                scope.importReferences.push(boundImport);
+              }
+            }
           }
 
           const localTargets = scopeIndex.get(ref.identifier);
@@ -1306,6 +1369,11 @@ export class PythonScopeExtractionParser {
           return ref;
         })
         .filter((ref) => ref.kind !== 'builtin');
+
+      // Add TypeVar bound references
+      if (typeVarBoundsToAdd.length > 0) {
+        scope.identifierReferences.push(...typeVarBoundsToAdd);
+      }
     }
 
     return scopeIndex;
@@ -1369,7 +1437,7 @@ export class PythonScopeExtractionParser {
           // Also add to importReferences if not already present
           if (!scope.importReferences.some(ir =>
             ir.source === importMatch.source &&
-            (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+            ir.imported === importMatch.imported
           )) {
             scope.importReferences.push(importMatch);
           }
@@ -1435,7 +1503,7 @@ export class PythonScopeExtractionParser {
                 // Also add to importReferences if not already present
                 if (!scope.importReferences.some(ir =>
                   ir.source === importMatch.source &&
-                  (ir.imported === importMatch.imported || ir.alias === importMatch.alias)
+                  ir.imported === importMatch.imported
                 )) {
                   scope.importReferences.push(importMatch);
                 }

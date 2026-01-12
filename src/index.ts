@@ -25,6 +25,11 @@ export * from './base/index.js';
 // Language-specific parsers (recommended)
 export * from './typescript/index.js';
 export * from './python/index.js';
+export * from './rust/index.js';
+export * from './go/index.js';
+export * from './c/index.js';
+export * from './cpp/index.js';
+export * from './csharp/index.js';
 
 // Web parsers
 export * from './html/index.js';
@@ -53,6 +58,20 @@ export * from './syntax-highlighting/index.js';
 export {
   ScopeExtractionParser,
   PythonScopeExtractionParser,
+  CScopeExtractionParser,
+  CppScopeExtractionParser,
+  RustScopeExtractionParser,
+  GoScopeExtractionParser,
+  CSharpScopeExtractionParser,
+  BaseScopeExtractionParser,
+  TYPESCRIPT_NODE_TYPES,
+  C_NODE_TYPES,
+  CPP_NODE_TYPES,
+  RUST_NODE_TYPES,
+  GO_NODE_TYPES,
+  CSHARP_NODE_TYPES,
+  IDENTIFIER_STOP_WORDS,
+  BUILTIN_IDENTIFIERS,
 } from './scope-extraction/index.js';
 
 export type {
@@ -64,7 +83,53 @@ export type {
   ReturnTypeInfo,
   ImportReference,
   IdentifierReference,
+  NodeTypeConfig,
 } from './scope-extraction/index.js';
+
+/**
+ * Import resolution utilities
+ */
+export {
+  ImportResolver,
+  TypeScriptImportResolver,
+  PythonImportResolver,
+  CImportResolver,
+  RustImportResolver,
+  GoImportResolver,
+  CSharpImportResolver,
+  isLocalPath,
+  isRelativePath,
+  toUnixPath
+} from './import-resolution/index.js';
+
+export type {
+  BaseImportResolver,
+  ImportType,
+  ResolvedImport,
+} from './import-resolution/index.js';
+
+/**
+ * Relationship resolution - CONSUMES/CONSUMED_BY between scopes
+ * Use this to resolve cross-file dependencies without a database
+ */
+export { RelationshipResolver } from './relationship-resolution/index.js';
+
+export type {
+  RelationshipType,
+  ResolvedRelationship,
+  RelationshipMetadata,
+  ScopeMappingEntry,
+  GlobalScopeMapping,
+  UuidToScopeMapping,
+  RelationshipResolverOptions,
+  RelationshipResolutionResult,
+  ResolutionStats,
+  UnresolvedReference,
+  ParsedFilesMap,
+  EnrichedScope,
+  EnrichedFileAnalysis,
+  SupportedLanguage as RelationshipSupportedLanguage,
+} from './relationship-resolution/index.js';
 
 /**
  * @internal WASM loader utilities

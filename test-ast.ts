@@ -1,27 +1,6 @@
 import { WasmLoader } from './src/wasm/index.js';
 
-const testCodes: Record<string, string> = {
-  c: `
-#include <stdio.h>
-
-typedef struct {
-    int x;
-    int y;
-} Point;
-
-enum Color { RED, GREEN, BLUE };
-
-int add(int a, int b) {
-    return a + b;
-}
-
-int main() {
-    Point p = {1, 2};
-    printf("Hello %d\\n", add(p.x, p.y));
-    return 0;
-}
-`,
-  cpp: `
+const cppCode = `
 #include <iostream>
 #include <vector>
 
@@ -39,13 +18,17 @@ public:
 
 struct Point {
     int x, y;
+    void print() { std::cout << x << "," << y; }
 };
 
 enum class Color { Red, Green, Blue };
 
+int helper(int x) { return x * 2; }
+
 }  // namespace MyLib
-`,
-  rust: `
+`;
+
+const rustCode = `
 use std::collections::HashMap;
 
 pub struct Point {
@@ -82,44 +65,9 @@ fn main() {
     let p = Point::new(3, 4);
     p.draw();
 }
-`,
-  csharp: `
-using System;
-using System.Collections.Generic;
+`;
 
-namespace MyApp
-{
-    public interface IDrawable
-    {
-        void Draw();
-    }
-
-    public class Point : IDrawable
-    {
-        public int X { get; set; }
-        public int Y { get; set; }
-
-        public Point(int x, int y)
-        {
-            X = x;
-            Y = y;
-        }
-
-        public void Draw()
-        {
-            Console.WriteLine($"Point({X}, {Y})");
-        }
-    }
-
-    public struct Vector
-    {
-        public float X, Y, Z;
-    }
-
-    public enum Color { Red, Green, Blue }
-}
-`,
-  go: `
+const goCode = `
 package main
 
 import (
@@ -151,19 +99,17 @@ func main() {
     p := NewPoint(3, 4)
     fmt.Println(p.Distance())
 }
-`
-};
+`;
 
-function printTree(node: any, content: string, indent = 0, maxDepth = 4) {
+function printTree(node: any, content: string, indent = 0, maxDepth = 5) {
   if (indent > maxDepth) return;
 
   const prefix = '  '.repeat(indent);
   const text = content.slice(node.startIndex, node.endIndex);
-  const shortText = text.length > 50 ? text.slice(0, 50).replace(/\n/g, '\\n') + '...' : text.replace(/\n/g, '\\n');
+  const shortText = text.length > 60 ? text.slice(0, 60).replace(/\n/g, '\\n') + '...' : text.replace(/\n/g, '\\n');
 
-  // Only show named nodes or important types
   if (node.isNamed || indent === 0) {
-    console.log(`${prefix}${node.type} [${node.startPosition.row}:${node.startPosition.column}] "${shortText}"`);
+    console.log(prefix + node.type + ' [L' + (node.startPosition.row + 1) + '] "' + shortText + '"');
   }
 
   for (let i = 0; i < node.childCount; i++) {
@@ -172,17 +118,23 @@ function printTree(node: any, content: string, indent = 0, maxDepth = 4) {
 }
 
 async function test() {
-  for (const [lang, code] of Object.entries(testCodes)) {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`Language: ${lang.toUpperCase()}`);
-    console.log('='.repeat(60));
+  const langs = [
+    { name: 'cpp', code: cppCode },
+    { name: 'rust', code: rustCode },
+    { name: 'go', code: goCode }
+  ];
+
+  for (const { name, code } of langs) {
+    console.log('\n' + '='.repeat(70));
+    console.log('Language: ' + name.toUpperCase());
+    console.log('='.repeat(70));
 
     try {
-      const { parser } = await WasmLoader.loadParser(lang as any);
+      const { parser } = await WasmLoader.loadParser(name as any);
       const tree = parser.parse(code);
       printTree(tree.rootNode, code);
     } catch (err: any) {
-      console.log(`Error: ${err.message}`);
+      console.log('Error: ' + err.message);
     }
   }
 }

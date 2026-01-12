@@ -117,6 +117,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "strip-json-comments": "^5.0.3",
     "tree-sitter-c": "^0.24.1",
     "tree-sitter-c-sharp": "^0.23.1",
     "tree-sitter-cpp": "^0.23.4",

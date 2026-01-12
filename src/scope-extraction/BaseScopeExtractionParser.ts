@@ -28,10 +28,10 @@ import type {
   EnumMemberInfo
 } from './types.js';
 
-type SyntaxNode = any;
+export type SyntaxNode = any;
 
 // Keywords and builtins to exclude from identifier references
-const IDENTIFIER_STOP_WORDS = new Set([
+export const IDENTIFIER_STOP_WORDS = new Set([
   'if', 'for', 'while', 'return', 'const', 'let', 'var', 'function', 'class',
   'extends', 'implements', 'import', 'from', 'export', 'default', 'new', 'this',
   'super', 'await', 'async', 'switch', 'case', 'break', 'continue', 'try',
@@ -39,16 +39,149 @@ const IDENTIFIER_STOP_WORDS = new Set([
   'instanceof', 'in', 'of'
 ]);
 
-const BUILTIN_IDENTIFIERS = new Set([
+export const BUILTIN_IDENTIFIERS = new Set([
   'Number', 'String', 'Boolean', 'Object', 'Array', 'Map', 'Set',
   'Promise', 'Date', 'Error', 'console', 'Math', 'JSON', 'RegExp',
   'Symbol', 'isNaN'
 ]);
 
-export class ScopeExtractionParser {
-  private parser: any = null;
-  private language: SupportedLanguage;
-  private initialized: boolean = false;
+/**
+ * Configuration for AST node type mappings.
+ * Each language parser should override this with language-specific node types.
+ */
+export interface NodeTypeConfig {
+  // Scope-defining nodes
+  classDeclaration: string[];
+  interfaceDeclaration: string[];
+  functionDeclaration: string[];
+  methodDefinition: string[];
+  enumDeclaration: string[];
+  typeAliasDeclaration: string[];
+  namespaceDeclaration: string[];
+
+  // Variable declarations
+  variableDeclaration: string[];
+  variableDeclarator: string[];
+  variableKind: string[]; // const, let, var
+
+  // Function expressions
+  arrowFunction: string[];
+  functionExpression: string[];
+
+  // Parameters
+  parameter: string[];
+  optionalParameter: string[];
+  restParameter: string[];
+
+  // Modifiers
+  accessibilityModifier: string[];
+  staticModifier: string[];
+  abstractModifier: string[];
+  readonlyModifier: string[];
+  asyncModifier: string[];
+  overrideModifier: string[];
+
+  // Class members
+  propertyDeclaration: string[];
+  methodSignature: string[];
+
+  // Inheritance
+  extendsClause: string[];
+  implementsClause: string[];
+  classHeritage: string[];
+
+  // Types
+  typeIdentifier: string[];
+  genericType: string[];
+  typeParameter: string[];
+
+  // Other
+  identifier: string[];
+  comment: string[];
+  decorator: string[];
+  enumMember: string[];
+  exportStatement: string[];
+  callExpression: string[];
+  memberExpression: string[];
+  error: string[];
+}
+
+/** Default TypeScript/JavaScript node type mappings */
+export const TYPESCRIPT_NODE_TYPES: NodeTypeConfig = {
+  classDeclaration: ['class_declaration', 'abstract_class_declaration'],
+  interfaceDeclaration: ['interface_declaration'],
+  functionDeclaration: ['function_declaration'],
+  methodDefinition: ['method_definition'],
+  enumDeclaration: ['enum_declaration'],
+  typeAliasDeclaration: ['type_alias_declaration'],
+  namespaceDeclaration: ['namespace_declaration'],
+
+  variableDeclaration: ['lexical_declaration', 'variable_declaration'],
+  variableDeclarator: ['variable_declarator'],
+  variableKind: ['const', 'let', 'var'],
+
+  arrowFunction: ['arrow_function'],
+  functionExpression: ['function', 'function_expression'],
+
+  parameter: ['required_parameter'],
+  optionalParameter: ['optional_parameter'],
+  restParameter: ['rest_parameter'],
+
+  accessibilityModifier: ['accessibility_modifier'],
+  staticModifier: ['static'],
+  abstractModifier: ['abstract'],
+  readonlyModifier: ['readonly'],
+  asyncModifier: ['async'],
+  overrideModifier: ['override'],
+
+  propertyDeclaration: ['public_field_definition', 'property_declaration'],
+  methodSignature: ['method_signature'],
+
+  extendsClause: ['extends_clause', 'extends_type_clause'],
+  implementsClause: ['implements_clause', 'class_implements_clause'],
+  classHeritage: ['class_heritage'],
+
+  typeIdentifier: ['type_identifier'],
+  genericType: ['generic_type'],
+  typeParameter: ['type_parameter'],
+
+  identifier: ['identifier'],
+  comment: ['comment'],
+  decorator: ['decorator'],
+  enumMember: ['property_identifier', 'enum_assignment'],
+  exportStatement: ['export_statement'],
+  callExpression: ['call_expression'],
+  memberExpression: ['member_expression', 'property_access_expression'],
+  error: ['ERROR']
+};
+
+export class BaseScopeExtractionParser {
+  protected parser: any = null;
+  protected language: SupportedLanguage;
+  protected initialized: boolean = false;
+
+  /** Keywords to exclude from identifier references - override in subclass */
+  protected stopWords: Set<string> = IDENTIFIER_STOP_WORDS;
+
+  /** Built-in identifiers to exclude from references - override in subclass */
+  protected builtinIdentifiers: Set<string> = BUILTIN_IDENTIFIERS;
+
+  /** AST node type mappings - override in subclass for different languages */
+  protected nodeTypes: NodeTypeConfig = TYPESCRIPT_NODE_TYPES;
+
+  /**
+   * Check if a node's type matches any of the types in a category
+   */
+  protected isNodeType(node: SyntaxNode, category: keyof NodeTypeConfig): boolean {
+    return this.nodeTypes[category].includes(node.type);
+  }
+
+  /**
+   * Check if a node's type matches any type in multiple categories
+   */
+  protected isNodeTypeAny(node: SyntaxNode, ...categories: (keyof NodeTypeConfig)[]): boolean {
+    return categories.some(cat => this.nodeTypes[cat].includes(node.type));
+  }
 
   constructor(language: SupportedLanguage = 'typescript') {
     this.language = language;
@@ -144,7 +277,7 @@ export class ScopeExtractionParser {
   /**
    * Extract scopes from AST node with hierarchy
    */
-  private extractScopes(
+  protected extractScopes(
     node: SyntaxNode,
     scopes: ScopeInfo[],
     content: string,
@@ -153,8 +286,8 @@ export class ScopeExtractionParser {
     fileImports: ImportReference[],
     filePath: string
   ): void {
-    // Extract different types of scopes
-    if (node.type === 'class_declaration' || node.type === 'abstract_class_declaration') {
+    // Extract different types of scopes using configurable node type mappings
+    if (this.isNodeType(node, 'classDeclaration')) {
       const scope = this.extractClass(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
@@ -163,27 +296,27 @@ export class ScopeExtractionParser {
       for (const child of node.children) {
         this.extractScopes(child, scopes, content, depth + 1, scope.name, fileImports, filePath);
       }
-    } else if (node.type === 'interface_declaration') {
+    } else if (this.isNodeType(node, 'interfaceDeclaration')) {
       const scope = this.extractInterface(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
-    } else if (node.type === 'function_declaration') {
+    } else if (this.isNodeType(node, 'functionDeclaration')) {
       const scope = this.extractFunction(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
-    } else if (node.type === 'method_definition') {
+    } else if (this.isNodeType(node, 'methodDefinition')) {
       const scope = this.extractMethod(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
-    } else if (node.type === 'enum_declaration') {
+    } else if (this.isNodeType(node, 'enumDeclaration')) {
       const scope = this.extractEnum(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
-    } else if (node.type === 'type_alias_declaration') {
+    } else if (this.isNodeType(node, 'typeAliasDeclaration')) {
       const scope = this.extractTypeAlias(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
-    } else if (node.type === 'namespace_declaration') {
+    } else if (this.isNodeType(node, 'namespaceDeclaration')) {
       const scope = this.extractNamespace(node, content, depth, parent, fileImports);
       scope.filePath = filePath;
       scopes.push(scope);
@@ -192,7 +325,7 @@ export class ScopeExtractionParser {
       for (const child of node.children) {
         this.extractScopes(child, scopes, content, depth + 1, scope.name, fileImports, filePath);
       }
-    } else if (node.type === 'lexical_declaration' || node.type === 'variable_declaration') {
+    } else if (this.isNodeType(node, 'variableDeclaration')) {
       // Handle const/let/var declarations that might contain functions
       const constScopes = this.extractConstFunctions(node, content, depth, parent, fileImports);
       const globalVarScopes = this.extractGlobalVariables(node, content, depth, parent, fileImports);
@@ -220,7 +353,7 @@ export class ScopeExtractionParser {
   /**
    * Extract class information with rich metadata
    */
-  private extractClass(
+  protected extractClass(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -310,7 +443,7 @@ export class ScopeExtractionParser {
   /**
    * Extract interface information
    */
-  private extractInterface(
+  protected extractInterface(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -385,7 +518,7 @@ export class ScopeExtractionParser {
   /**
    * Extract function information
    */
-  private extractFunction(
+  protected extractFunction(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -465,7 +598,7 @@ export class ScopeExtractionParser {
   /**
    * Extract method information
    */
-  private extractMethod(
+  protected extractMethod(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -545,7 +678,7 @@ export class ScopeExtractionParser {
   /**
    * Extract enum information
    */
-  private extractEnum(
+  protected extractEnum(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -616,7 +749,7 @@ export class ScopeExtractionParser {
   /**
    * Extract type alias information
    */
-  private extractTypeAlias(
+  protected extractTypeAlias(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -683,7 +816,7 @@ export class ScopeExtractionParser {
   /**
    * Extract namespace information
    */
-  private extractNamespace(
+  protected extractNamespace(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -751,7 +884,7 @@ export class ScopeExtractionParser {
    * Extract const/let/var declarations that contain functions
    * Handles: export const myFunc = () => {...}, export const fn = function() {...}, etc.
    */
-  private extractConstFunctions(
+  protected extractConstFunctions(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -860,7 +993,7 @@ export class ScopeExtractionParser {
   /**
    * Extract global variables (non-function const/let/var at module level)
    */
-  private extractGlobalVariables(
+  protected extractGlobalVariables(
     node: SyntaxNode,
     content: string,
     depth: number,
@@ -982,16 +1115,17 @@ export class ScopeExtractionParser {
   /**
    * Extract modifiers (public, private, static, async, etc.)
    */
-  private extractModifiers(node: SyntaxNode, content: string): string[] {
+  protected extractModifiers(node: SyntaxNode, content: string): string[] {
     const modifiers: string[] = [];
 
     for (const child of node.children) {
-      if (child.type === 'accessibility_modifier' ||
-          child.type === 'static' ||
-          child.type === 'abstract' ||
-          child.type === 'override' ||
-          child.type === 'readonly' ||
-          child.type === 'async') {
+      if (this.isNodeTypeAny(child,
+          'accessibilityModifier',
+          'staticModifier',
+          'abstractModifier',
+          'overrideModifier',
+          'readonlyModifier',
+          'asyncModifier')) {
         // Use actual text, not node type (e.g., "private" not "accessibility_modifier")
         modifiers.push(this.getNodeText(child, content));
       }
@@ -1003,21 +1137,19 @@ export class ScopeExtractionParser {
   /**
    * Extract function parameters with type information
    */
-  private extractParameters(node: SyntaxNode, content: string): ParameterInfo[] {
+  protected extractParameters(node: SyntaxNode, content: string): ParameterInfo[] {
     const parameters: ParameterInfo[] = [];
     const paramsNode = node.childForFieldName('parameters');
 
     if (paramsNode) {
       for (const child of paramsNode.children) {
-        if (child.type === 'required_parameter' ||
-            child.type === 'optional_parameter' ||
-            child.type === 'rest_parameter') {
+        if (this.isNodeTypeAny(child, 'parameter', 'optionalParameter', 'restParameter')) {
 
           // Extract name from pattern (could be identifier or destructuring)
           let name = '';
           const patternNode = child.childForFieldName('pattern');
           if (patternNode) {
-            if (patternNode.type === 'identifier') {
+            if (this.isNodeType(patternNode, 'identifier')) {
               name = this.getNodeText(patternNode, content);
             } else {
               // For destructuring patterns, use the pattern as name
@@ -1033,7 +1165,7 @@ export class ScopeExtractionParser {
             type = rawType.replace(/^:\s*/, '').trim();
           }
 
-          const optional = child.type === 'optional_parameter';
+          const optional = this.isNodeType(child, 'optionalParameter');
           const defaultValue = optional ? this.getNodeText(child.childForFieldName('value'), content) : undefined;
           const line = child.startPosition.row + 1;
           const column = child.startPosition.column;
@@ -1058,7 +1190,7 @@ export class ScopeExtractionParser {
   /**
    * Extract return type
    */
-  private extractReturnType(node: SyntaxNode, content: string): string | undefined {
+  protected extractReturnType(node: SyntaxNode, content: string): string | undefined {
     const returnTypeNode = node.childForFieldName('return_type');
     if (!returnTypeNode) return undefined;
 
@@ -1070,7 +1202,7 @@ export class ScopeExtractionParser {
   /**
    * Extract return type with position information
    */
-  private extractReturnTypeInfo(node: SyntaxNode, content: string): ReturnTypeInfo | undefined {
+  protected extractReturnTypeInfo(node: SyntaxNode, content: string): ReturnTypeInfo | undefined {
     const returnTypeNode = node.childForFieldName('return_type');
     if (!returnTypeNode) return undefined;
 
@@ -1089,7 +1221,7 @@ export class ScopeExtractionParser {
    * Extract heritage clauses (extends/implements)
    * Works for both classes and interfaces
    */
-  private extractHeritageClauses(node: SyntaxNode, content: string): HeritageClause[] {
+  protected extractHeritageClauses(node: SyntaxNode, content: string): HeritageClause[] {
     const clauses: HeritageClause[] = [];
 
 
@@ -1174,7 +1306,7 @@ export class ScopeExtractionParser {
    * Extract generic/type parameters
    * Examples: <T>, <T extends Base>, <K extends keyof T = string>
    */
-  private extractGenericParameters(node: SyntaxNode, content: string): GenericParameter[] {
+  protected extractGenericParameters(node: SyntaxNode, content: string): GenericParameter[] {
     const params: GenericParameter[] = [];
 
     // Find type_parameters node
@@ -1211,7 +1343,7 @@ export class ScopeExtractionParser {
    * Extract decorator details with arguments
    * Works for both TypeScript and Python decorators
    */
-  private extractDecoratorDetails(node: SyntaxNode, content: string): DecoratorInfo[] {
+  protected extractDecoratorDetails(node: SyntaxNode, content: string): DecoratorInfo[] {
     const decorators: DecoratorInfo[] = [];
 
     // For TypeScript, decorators may be on the parent export_statement, not the class/function itself
@@ -1260,7 +1392,7 @@ export class ScopeExtractionParser {
   /**
    * Extract enum members with values
    */
-  private extractEnumMembers(enumNode: SyntaxNode, content: string): EnumMemberInfo[] {
+  protected extractEnumMembers(enumNode: SyntaxNode, content: string): EnumMemberInfo[] {
     const members: EnumMemberInfo[] = [];
 
     const bodyNode = enumNode.childForFieldName('body');
@@ -1302,7 +1434,7 @@ export class ScopeExtractionParser {
   /**
    * Extract class members (properties, methods, constructors, getters, setters)
    */
-  private extractClassMembers(classNode: SyntaxNode, content: string): ClassMemberInfo[] {
+  protected extractClassMembers(classNode: SyntaxNode, content: string): ClassMemberInfo[] {
     const members: ClassMemberInfo[] = [];
     const bodyNode = classNode.childForFieldName('body');
 
@@ -1382,7 +1514,7 @@ export class ScopeExtractionParser {
   /**
    * Extract accessibility modifier from a node
    */
-  private extractAccessibility(node: SyntaxNode): 'public' | 'private' | 'protected' | undefined {
+  protected extractAccessibility(node: SyntaxNode): 'public' | 'private' | 'protected' | undefined {
     for (const child of node.children) {
       if (child.type === 'accessibility_modifier') {
         const text = child.text;
@@ -1397,7 +1529,7 @@ export class ScopeExtractionParser {
   /**
    * Check if node has a specific modifier
    */
-  private hasModifier(node: SyntaxNode, modifier: string): boolean {
+  protected hasModifier(node: SyntaxNode, modifier: string): boolean {
     for (const child of node.children) {
       if (child.type === modifier || child.text === modifier) {
         return true;
@@ -1409,7 +1541,7 @@ export class ScopeExtractionParser {
   /**
    * Build method signature string
    */
-  private buildMethodSignature(name: string, parameters: ParameterInfo[], returnType?: string): string {
+  protected buildMethodSignature(name: string, parameters: ParameterInfo[], returnType?: string): string {
     const paramsStr = parameters.map(p => {
       let param = p.name;
       if (p.type) param += `: ${p.type}`;
@@ -1425,7 +1557,7 @@ export class ScopeExtractionParser {
   /**
    * Extract variables declared in a scope
    */
-  private extractVariables(node: SyntaxNode, content: string, scopeName: string): VariableInfo[] {
+  protected extractVariables(node: SyntaxNode, content: string, scopeName: string): VariableInfo[] {
     const variables: VariableInfo[] = [];
 
     const traverse = (n: SyntaxNode) => {
@@ -1467,7 +1599,7 @@ export class ScopeExtractionParser {
   /**
    * Get variable kind (const, let, var)
    */
-  private getVariableKind(node: SyntaxNode): 'const' | 'let' | 'var' {
+  protected getVariableKind(node: SyntaxNode): 'const' | 'let' | 'var' {
     for (const child of node.children) {
       if (child.text === 'const') return 'const';
       if (child.text === 'let') return 'let';
@@ -1479,7 +1611,7 @@ export class ScopeExtractionParser {
   /**
    * Check if node represents a nested scope
    */
-  private isNestedScope(node: SyntaxNode): boolean {
+  protected isNestedScope(node: SyntaxNode): boolean {
     return [
       'class_declaration',
       'function_declaration',
@@ -1492,7 +1624,7 @@ export class ScopeExtractionParser {
   /**
    * Find children by type
    */
-  private findChildrenByType(node: SyntaxNode, type: string): SyntaxNode[] {
+  protected findChildrenByType(node: SyntaxNode, type: string): SyntaxNode[] {
     const results: SyntaxNode[] = [];
     for (const child of node.children) {
       if (child.type === type) {
@@ -1506,7 +1638,7 @@ export class ScopeExtractionParser {
    * Build signature string
    * Note: In TypeScript, methods don't have a "method" keyword, so we omit the type for methods.
    */
-  private buildSignature(
+  protected buildSignature(
     type: string,
     name: string,
     parameters: ParameterInfo[],
@@ -1534,7 +1666,7 @@ export class ScopeExtractionParser {
   /**
    * Dedent content (remove leading whitespace)
    */
-  private dedentContent(content: string): string {
+  protected dedentContent(content: string): string {
     const lines = content.split('\n');
     if (lines.length === 0) return content;
 
@@ -1558,7 +1690,7 @@ export class ScopeExtractionParser {
   /**
    * Extract dependencies from content
    */
-  private extractDependencies(content: string): string[] {
+  protected extractDependencies(content: string): string[] {
     const dependencies: string[] = [];
 
     // Match various import patterns
@@ -1582,7 +1714,7 @@ export class ScopeExtractionParser {
   /**
    * Extract imports from content
    */
-  private extractImports(content: string): string[] {
+  protected extractImports(content: string): string[] {
     const imports: string[] = [];
     const importRegex = /import\s+.*?\s+from\s+['"]([^'"]+)['"]/g;
 
@@ -1597,7 +1729,7 @@ export class ScopeExtractionParser {
   /**
    * Extract exports from content
    */
-  private extractExports(content: string): string[] {
+  protected extractExports(content: string): string[] {
     const exports: string[] = [];
     const exportRegex = /export\s+(?:default\s+)?(?:function|class|interface|enum|type|const|let|var)\s+(\w+)/g;
 
@@ -1612,7 +1744,7 @@ export class ScopeExtractionParser {
   /**
    * Calculate complexity score
    */
-  private calculateComplexity(node: SyntaxNode): number {
+  protected calculateComplexity(node: SyntaxNode): number {
     let complexity = 1; // Base complexity
 
     // Count control flow statements
@@ -1640,7 +1772,7 @@ export class ScopeExtractionParser {
   /**
    * Validate AST node
    */
-  private validateNode(node: SyntaxNode): boolean {
+  protected validateNode(node: SyntaxNode): boolean {
     // Basic validation - could be enhanced
     return node.type !== 'ERROR';
   }
@@ -1648,7 +1780,7 @@ export class ScopeExtractionParser {
   /**
    * Extract AST issues
    */
-  private extractNodeIssues(node: SyntaxNode): string[] {
+  protected extractNodeIssues(node: SyntaxNode): string[] {
     const issues: string[] = [];
 
     if (node.type === 'ERROR') {
@@ -1662,7 +1794,7 @@ export class ScopeExtractionParser {
   /**
    * Extract AST notes
    */
-  private extractNodeNotes(node: SyntaxNode): string[] {
+  protected extractNodeNotes(node: SyntaxNode): string[] {
     const notes: string[] = [];
 
     // Could add specific notes based on node analysis
@@ -1672,21 +1804,21 @@ export class ScopeExtractionParser {
   /**
    * Validate entire AST
    */
-  private validateAST(rootNode: SyntaxNode): boolean {
+  protected validateAST(rootNode: SyntaxNode): boolean {
     return this.validateNode(rootNode);
   }
 
   /**
    * Extract AST issues from root
    */
-  private extractASTIssues(rootNode: SyntaxNode): string[] {
+  protected extractASTIssues(rootNode: SyntaxNode): string[] {
     return this.extractNodeIssues(rootNode);
   }
 
   /**
    * Get text content of a node
    */
-  private getNodeText(node: SyntaxNode | null, content: string): string {
+  protected getNodeText(node: SyntaxNode | null, content: string): string {
     if (!node) return '';
     return content.slice(node.startIndex, node.endIndex);
   }
@@ -1694,7 +1826,7 @@ export class ScopeExtractionParser {
   /**
    * Build reference exclusions set for identifier extraction
    */
-  private buildReferenceExclusions(name: string, parameters: ParameterInfo[]): Set<string> {
+  protected buildReferenceExclusions(name: string, parameters: ParameterInfo[]): Set<string> {
     const exclusions = new Set<string>();
     if (name) {
       exclusions.add(name);
@@ -1710,7 +1842,7 @@ export class ScopeExtractionParser {
   /**
    * Collect local symbols (definitions) from a node
    */
-  private collectLocalSymbols(node: SyntaxNode, content: string): Set<string> {
+  protected collectLocalSymbols(node: SyntaxNode, content: string): Set<string> {
     const symbols = new Set<string>();
     const visit = (current: SyntaxNode | null) => {
       if (!current) return;
@@ -1756,7 +1888,7 @@ export class ScopeExtractionParser {
   /**
    * Get property access parts (object and property nodes)
    */
-  private getPropertyAccessParts(node: SyntaxNode): {
+  protected getPropertyAccessParts(node: SyntaxNode): {
     objectNode?: SyntaxNode | null;
     propertyNode?: SyntaxNode | null;
   } {
@@ -1775,7 +1907,7 @@ export class ScopeExtractionParser {
   /**
    * Extract identifier references from a node
    */
-  private extractIdentifierReferences(
+  protected extractIdentifierReferences(
     node: SyntaxNode,
     content: string,
     exclude: Set<string>
@@ -1793,8 +1925,8 @@ export class ScopeExtractionParser {
           if (
             identifier &&
             !exclude.has(identifier) &&
-            !IDENTIFIER_STOP_WORDS.has(identifier) &&
-            !BUILTIN_IDENTIFIERS.has(identifier)
+            !this.stopWords.has(identifier) &&
+            !this.builtinIdentifiers.has(identifier)
           ) {
             const key = `${identifier}:${nameNode.startPosition.row}:${nameNode.startPosition.column}:jsx`;
             if (!references.has(key)) {
@@ -1834,8 +1966,8 @@ export class ScopeExtractionParser {
         if (
           identifier &&
           !exclude.has(identifier) &&
-          !IDENTIFIER_STOP_WORDS.has(identifier) &&
-          !BUILTIN_IDENTIFIERS.has(identifier)
+          !this.stopWords.has(identifier) &&
+          !this.builtinIdentifiers.has(identifier)
         ) {
           let qualifier: string | undefined;
           if (parent && (parent.type === 'member_expression' || parent.type === 'property_access_expression')) {
@@ -1880,7 +2012,7 @@ export class ScopeExtractionParser {
   /**
    * Check if an identifier node is a definition (not a reference)
    */
-  private isDefinitionIdentifier(node: SyntaxNode): boolean {
+  protected isDefinitionIdentifier(node: SyntaxNode): boolean {
     const parent = node.parent;
     if (!parent) return false;
     const nameField = parent.childForFieldName?.('name');
@@ -1918,7 +2050,7 @@ export class ScopeExtractionParser {
   /**
    * Resolve imports for a scope based on identifier references
    */
-  private resolveImportsForScope(
+  protected resolveImportsForScope(
     references: IdentifierReference[],
     fileImports: ImportReference[]
   ): ImportReference[] {
@@ -1948,7 +2080,7 @@ export class ScopeExtractionParser {
   /**
    * Extract structured imports from content
    */
-  private extractStructuredImports(
+  protected extractStructuredImports(
     content: string,
     resolver?: { isPathAlias: (path: string) => boolean }
   ): ImportReference[] {
@@ -2127,7 +2259,7 @@ export class ScopeExtractionParser {
   /**
    * Split import specification by comma (respecting braces)
    */
-  private splitImportSpec(spec: string): string[] {
+  protected splitImportSpec(spec: string): string[] {
     const parts: string[] = [];
     let current = '';
     let depth = 0;
@@ -2160,7 +2292,7 @@ export class ScopeExtractionParser {
   /**
    * Get a specific line from content
    */
-  private getLineFromContent(content: string, lineNumber: number): string | undefined {
+  protected getLineFromContent(content: string, lineNumber: number): string | undefined {
     const lines = content.split('\n');
     return lines[lineNumber - 1]?.trim();
   }
@@ -2168,7 +2300,7 @@ export class ScopeExtractionParser {
   /**
    * Classify scope references (link identifiers to imports/local scopes)
    */
-  private classifyScopeReferences(
+  protected classifyScopeReferences(
     scopes: ScopeInfo[],
     fileImports: ImportReference[]
   ): Map<string, ScopeInfo[]> {
@@ -2202,6 +2334,7 @@ export class ScopeExtractionParser {
             ref.source = importMatch.source;
             ref.isLocalImport = importMatch.isLocal;
             // Also add to importReferences if not already present
+            // Note: only check alias if defined to avoid undefined === undefined matching
             if (!scope.importReferences.some(ir =>
               ir.source === importMatch.source &&
               ir.imported === importMatch.imported
@@ -2233,7 +2366,7 @@ export class ScopeExtractionParser {
    * This catches imports that extractIdentifierReferences may have missed
    * (e.g., due to AST traversal limitations or edge cases).
    */
-  private ensureImportReferencesTracked(
+  protected ensureImportReferencesTracked(
     scope: ScopeInfo,
     fileImports: ImportReference[],
     aliasMap: Map<string, ImportReference>
@@ -2276,7 +2409,7 @@ export class ScopeExtractionParser {
   /**
    * Escape special regex characters in a string
    */
-  private escapeRegex(str: string): string {
+  protected escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
@@ -2284,7 +2417,7 @@ export class ScopeExtractionParser {
    * Attach signature references (link return types/params to local scopes AND imports)
    * Extracts ALL type identifiers from return types (e.g., Promise<MergeStats> → MergeStats)
    */
-  private attachSignatureReferences(
+  protected attachSignatureReferences(
     scopes: ScopeInfo[],
     scopeIndex: Map<string, ScopeInfo[]>,
     fileImports: ImportReference[]
@@ -2336,6 +2469,7 @@ export class ScopeExtractionParser {
             isLocalImport: importMatch.isLocal
           });
           // Also add to importReferences if not already present
+          // Note: only check imported to avoid undefined === undefined alias matching
           if (!scope.importReferences.some(ir =>
             ir.source === importMatch.source &&
             ir.imported === importMatch.imported
@@ -2354,7 +2488,7 @@ export class ScopeExtractionParser {
    * Extract type references from class fields and method parameters
    * Extracts ALL type identifiers from parameter types (e.g., Map<string, MergeNode> → MergeNode)
    */
-  private attachClassFieldTypeReferences(
+  protected attachClassFieldTypeReferences(
     scopes: ScopeInfo[],
     scopeIndex: Map<string, ScopeInfo[]>,
     importMap: Map<string, ImportReference>
@@ -2462,7 +2596,7 @@ export class ScopeExtractionParser {
    * Extract base type identifier from a type string (first identifier only)
    * @deprecated Use extractAllTypeIdentifiers for complete type extraction
    */
-  private extractBaseTypeIdentifier(type?: string): string | undefined {
+  protected extractBaseTypeIdentifier(type?: string): string | undefined {
     const types = this.extractAllTypeIdentifiers(type);
     return types.length > 0 ? types[0] : undefined;
   }
@@ -2473,7 +2607,7 @@ export class ScopeExtractionParser {
    * Only returns PascalCase identifiers (user-defined types start with uppercase)
    * The scopeIndex lookup will naturally filter out types not defined in the project
    */
-  private extractAllTypeIdentifiers(type?: string): string[] {
+  protected extractAllTypeIdentifiers(type?: string): string[] {
     if (!type) return [];
     const cleaned = type.trim();
     if (!cleaned) return [];
@@ -2491,7 +2625,7 @@ export class ScopeExtractionParser {
    * Extract JSDoc comment preceding a node (TypeScript/JavaScript)
    * Looks for JSDoc comments (starting with slash-star-star) immediately before the node
    */
-  private extractJSDoc(node: SyntaxNode, content: string): string | undefined {
+  protected extractJSDoc(node: SyntaxNode, content: string): string | undefined {
     // Get the previous sibling or check parent's children
     let prevSibling = node.previousSibling;
 
@@ -2541,7 +2675,7 @@ export class ScopeExtractionParser {
   /**
    * Clean JSDoc comment by removing comment markers and formatting
    */
-  private cleanJSDoc(jsdoc: string): string {
+  protected cleanJSDoc(jsdoc: string): string {
     return jsdoc
       .replace(/^\/\*\*\s*/, '')  // Remove opening /**
       .replace(/\s*\*\/$/, '')     // Remove closing */
@@ -2555,7 +2689,7 @@ export class ScopeExtractionParser {
    * Extract file-level scopes (code outside of defined scopes like functions, classes, etc.)
    * This captures top-level code, variable declarations, object literals, etc.
    */
-  private extractFileScopes(
+  protected extractFileScopes(
     content: string,
     existingScopes: ScopeInfo[],
     filePath: string,
@@ -2621,7 +2755,7 @@ export class ScopeExtractionParser {
   /**
    * Check if content has meaningful code (not just whitespace/comments)
    */
-  private hasMeaningfulContent(content: string): boolean {
+  protected hasMeaningfulContent(content: string): boolean {
     const trimmed = content.trim();
     if (!trimmed) return false;
 
@@ -2637,7 +2771,7 @@ export class ScopeExtractionParser {
   /**
    * Create a file scope from code content
    */
-  private createFileScope(
+  protected createFileScope(
     content: string,
     startLine: number,
     endLine: number,
@@ -2698,7 +2832,7 @@ export class ScopeExtractionParser {
   /**
    * Extract top-level variables from content
    */
-  private extractTopLevelVariables(content: string, baseLine: number): VariableInfo[] {
+  protected extractTopLevelVariables(content: string, baseLine: number): VariableInfo[] {
     const variables: VariableInfo[] = [];
     const lines = content.split('\n');
 
@@ -2723,7 +2857,7 @@ export class ScopeExtractionParser {
   /**
    * Extract identifier references from text (simplified version)
    */
-  private extractIdentifierReferencesFromText(
+  protected extractIdentifierReferencesFromText(
     content: string,
     exclusions: Set<string>,
     baseLine: number
@@ -2740,7 +2874,7 @@ export class ScopeExtractionParser {
         const identifier = match[1];
         
         // Skip if excluded or is a keyword
-        if (exclusions.has(identifier) || IDENTIFIER_STOP_WORDS.has(identifier)) {
+        if (exclusions.has(identifier) || this.stopWords.has(identifier)) {
           continue;
         }
 
